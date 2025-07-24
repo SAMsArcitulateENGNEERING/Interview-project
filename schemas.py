@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, EmailStr
 from typing import List, Optional
 import datetime
 
@@ -18,12 +18,27 @@ class Question(QuestionBase):
 
 class UserBase(BaseModel):
     name: str
+    email: EmailStr
 
 class UserCreate(UserBase):
-    pass
+    password: str
+    role: str = "participant"
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    email: Optional[str] = None
 
 class User(UserBase):
     id: int
+    role: str
+    created_at: datetime.datetime
 
     class Config:
         from_attributes = True

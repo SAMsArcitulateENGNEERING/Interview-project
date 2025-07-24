@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, Form, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.security import HTTPBearer
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 import random
@@ -11,10 +12,16 @@ import json
 import models
 import schemas
 from database import SessionLocal, engine
+from auth import get_password_hash, verify_password, create_access_token, get_current_user, get_current_host, get_current_participant
+import os
 
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI()
+app = FastAPI(
+    title="Professional Exam System",
+    description="A secure, monitored, and professional online examination platform",
+    version="1.0.0"
+)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -37,6 +44,10 @@ async def read_sorting():
 @app.get("/host.html")
 async def read_host():
     return FileResponse('static/host.html')
+
+@app.get("/login.html")
+async def read_login():
+    return FileResponse('static/login.html')
 
 # Dependency to get the database session
 def get_db():
@@ -87,11 +98,43 @@ def on_startup():
 
 @app.post("/register_user", response_model=schemas.User)
 def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    db_user = models.User(name=user.name)
+    # Check if user already exists
+    existing_user = db.query(models.User).filter(models.User.email == user.email).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    # Hash password and create user
+    hashed_password = get_password_hash(user.password)
+    db_user = models.User(
+        name=user.name,
+        email=user.email,
+        password_hash=hashed_password,
+        role=user.role
+    )
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
     return db_user
+
+@app.post("/login", response_model=schemas.Token)
+def login(user_credentials: schemas.UserLogin, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.email == user_credentials.email).first()
+    if not user or not verify_password(user_credentials.password, user.password_hash):
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    access_token_expires = datetime.timedelta(minutes=30)
+    access_token = create_access_token(
+        data={"sub": user.email}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+@app.get("/me", response_model=schemas.User)
+def read_users_me(current_user: models.User = Depends(get_current_user)):
+    return current_user
 
 @app.get("/get_random_questions", response_model=List[schemas.Question])
 def get_random_questions(count: int = 5, db: Session = Depends(get_db)):

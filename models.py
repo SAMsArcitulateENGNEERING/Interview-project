@@ -8,6 +8,10 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
+    email = Column(String, unique=True, nullable=False, index=True)
+    password_hash = Column(String, nullable=False)
+    role = Column(String, default="participant")  # "host" or "participant"
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
     
     attempts = relationship("ExamAttempt", back_populates="user")
 
@@ -18,6 +22,19 @@ class Question(Base):
     text = Column(String, nullable=False)
     options = Column(JSON, nullable=False)
     correct_answer = Column(String, nullable=False)
+    exam_session_id = Column(Integer, ForeignKey("exam_sessions.id"), nullable=True)
+    question_type = Column(String, default="mcq")  # mcq, true_false, etc.
+    points = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+class QuestionOption(Base):
+    __tablename__ = "question_options"
+
+    id = Column(Integer, primary_key=True, index=True)
+    question_id = Column(Integer, ForeignKey("questions.id"))
+    option_text = Column(String, nullable=False)
+    is_correct = Column(Boolean, default=False)
+    option_order = Column(Integer, default=0)
 
 class ExamAttempt(Base):
     __tablename__ = "exam_attempts"
