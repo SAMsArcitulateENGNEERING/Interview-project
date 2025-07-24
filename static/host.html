@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Exam Host Dashboard</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/host.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="host-container">
+        <!-- Header -->
+        <header class="host-header">
+            <h1><i class="fas fa-chalkboard-teacher"></i> Exam Host Dashboard</h1>
+            <div class="host-status">
+                <span id="connection-status" class="status-indicator">
+                    <i class="fas fa-circle"></i> Connected
+                </span>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="host-content">
+            <!-- Left Panel - Exam Management -->
+            <div class="left-panel">
+                <div class="panel-section">
+                    <h2><i class="fas fa-plus-circle"></i> Create New Exam</h2>
+                    <form id="exam-form" class="exam-form">
+                        <div class="form-group">
+                            <label for="exam-title">Exam Title</label>
+                            <input type="text" id="exam-title" required placeholder="Enter exam title">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="exam-description">Description</label>
+                            <textarea id="exam-description" placeholder="Enter exam description"></textarea>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="exam-duration">Duration (minutes)</label>
+                                <input type="number" id="exam-duration" min="5" max="480" value="60" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="question-count">Questions Count</label>
+                                <input type="number" id="question-count" min="1" max="50" value="10" required>
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="start-date">Start Date</label>
+                                <input type="date" id="start-date" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="start-time">Start Time</label>
+                                <input type="time" id="start-time" required>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="exam-password">Exam Password (Optional)</label>
+                            <input type="text" id="exam-password" placeholder="Leave empty for no password">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="enable-monitoring" checked>
+                                Enable Alt-Tab Monitoring
+                            </label>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i> Create Exam
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Active Exams -->
+                <div class="panel-section">
+                    <h2><i class="fas fa-play-circle"></i> Active Exams</h2>
+                    <div id="active-exams" class="exam-list">
+                        <!-- Active exams will be loaded here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel - Real-time Monitoring -->
+            <div class="right-panel">
+                <div class="panel-section">
+                    <h2><i class="fas fa-eye"></i> Live Monitoring</h2>
+                    <div class="monitoring-stats">
+                        <div class="stat-card">
+                            <div class="stat-number" id="total-participants">0</div>
+                            <div class="stat-label">Total Participants</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number" id="active-participants">0</div>
+                            <div class="stat-label">Active Now</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number" id="total-violations">0</div>
+                            <div class="stat-label">Violations</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live Participants -->
+                <div class="panel-section">
+                    <h2><i class="fas fa-users"></i> Live Participants</h2>
+                    <div id="participants-list" class="participants-list">
+                        <!-- Live participants will be shown here -->
+                    </div>
+                </div>
+
+                <!-- Recent Violations -->
+                <div class="panel-section">
+                    <h2><i class="fas fa-exclamation-triangle"></i> Recent Violations</h2>
+                    <div id="violations-list" class="violations-list">
+                        <!-- Recent violations will be shown here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Panel - Exam History -->
+        <div class="bottom-panel">
+            <div class="panel-section">
+                <h2><i class="fas fa-history"></i> Exam History</h2>
+                <div id="exam-history" class="exam-history">
+                    <!-- Exam history will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div id="exam-details-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Exam Details</h2>
+            <div id="exam-details-content"></div>
+        </div>
+    </div>
+
+    <script src="/static/js/host.js"></script>
+</body>
+</html> 
