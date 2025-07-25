@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Select Exam - Interview Program</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .exam-list-container {
+            max-width: 600px;
+            margin: 40px auto;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+            padding: 32px 24px;
+        }
+        .exam-list-title {
+            font-size: 2rem;
+            margin-bottom: 24px;
+            text-align: center;
+        }
+        .exam-list {
+            list-style: none;
+            padding: 0;
+        }
+        .exam-list li {
+            margin-bottom: 18px;
+            padding: 18px 16px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #f9f9f9;
+        }
+        .exam-list li:last-child {
+            margin-bottom: 0;
+        }
+        .start-exam-btn {
+            background: #667eea;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            padding: 8px 18px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .start-exam-btn:hover {
+            background: #5a67d8;
+        }
+    </style>
+</head>
+<body>
+    <div class="exam-list-container">
+        <div class="exam-list-title">Select an Exam to Attempt</div>
+        <ul class="exam-list" id="exam-list">
+            <li>Loading exams...</li>
+        </ul>
+    </div>
+    <script src="/static/js/select_exam.js"></script>
+</body>
+</html> 

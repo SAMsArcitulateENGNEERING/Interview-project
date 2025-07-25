@@ -1,34 +1,39 @@
-document.getElementById('start-exam').addEventListener('click', async () => {
+document.getElementById('start-exam-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
     const name = document.getElementById('name').value;
-    if (!name) {
-        alert('Please enter your name.');
+    const email = document.getElementById('email').value;
+    const examId = window.selectedExamId;
+    
+    if (!name || !email || !examId) {
+        document.getElementById('start-error').textContent = 'Please enter your name, email, and select an exam.';
         return;
     }
 
     try {
-        const userResponse = await fetch('/register_user', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ name }),
-        });
-        const user = await userResponse.json();
+        const formData = new FormData();
+        formData.append('name', name);
+        formData.append('email', email);
+        formData.append('exam_id', examId);
 
-        const examResponse = await fetch('/start_exam', {
+        const response = await fetch('/start_exam_simple', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ user_id: user.id }),
+            body: formData
         });
-        const exam = await examResponse.json();
 
-        localStorage.setItem('attempt_id', exam.id);
-        localStorage.setItem('user_id', user.id);
-        window.location.href = 'exam.html';
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+        }
+
+        const result = await response.json();
+        if (result.success !== false) {
+            localStorage.setItem('user_id', result.user_id);
+            localStorage.setItem('exam_attempt_id', result.exam_attempt_id);
+            window.location.href = `/exam.html?attempt_id=${result.exam_attempt_id}&user_id=${result.user_id}`;
+        } else {
+            document.getElementById('start-error').textContent = result.detail || 'Failed to start exam.';
+        }
     } catch (error) {
-        console.error('Error starting exam:', error);
-        alert('Failed to start the exam. Please try again.');
+        document.getElementById('start-error').textContent = error.message || 'Failed to start the exam. Please try again.';
     }
 }); 

@@ -3,21 +3,109 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Interview Program - Exam</title>
+    <title>Professional Exam - Interview Program</title>
     <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/exam.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
 <body>
-    <div class="container">
-        <div class="header-info">
-            <div id="timer">60:00</div>
-            <div id="alt-tab-counter">Violations: 0/3</div>
+    <div class="exam-container">
+        <!-- Header -->
+        <header class="exam-header">
+            <div class="header-left">
+                <h1><i class="fas fa-graduation-cap"></i> Professional Exam</h1>
+                <p id="user-info">Loading...</p>
+            </div>
+            <div class="header-right">
+                <div class="timer-container">
+                    <i class="fas fa-clock"></i>
+                    <span id="timer">60:00</span>
+                </div>
+                <div class="violation-container">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span id="alt-tab-counter">Violations: 0/3</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Progress Bar -->
+        <div class="progress-section">
+            <div class="progress-info">
+                <span id="question-counter">Question 1 of 5</span>
+                <span id="progress-percentage">20%</span>
+            </div>
+            <div class="progress-bar">
+                <div id="progress-fill" class="progress-fill"></div>
+            </div>
         </div>
-        <div id="question-container">
-            <h2 id="question-text"></h2>
-            <div id="options-container"></div>
+
+        <!-- Main Content -->
+        <main class="exam-content">
+            <div id="question-container" class="question-container">
+                <div class="question-header">
+                    <h2 id="question-text">Loading question...</h2>
+                </div>
+                <div id="options-container" class="options-container">
+                    <!-- Options will be populated here -->
+                </div>
+            </div>
+
+            <!-- Navigation -->
+            <div class="exam-navigation">
+                <button id="prev-question" class="nav-btn prev-btn" disabled>
+                    <i class="fas fa-arrow-left"></i> Previous
+                </button>
+                <button id="next-question" class="nav-btn next-btn">
+                    Next <i class="fas fa-arrow-right"></i>
+                </button>
+            </div>
+        </main>
+
+        <!-- Phone Number Modal -->
+        <div id="phone-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3><i class="fas fa-phone"></i> Contact Information</h3>
+                </div>
+                <div class="modal-body">
+                    <p>Please provide your contact information to continue with the exam:</p>
+                    <div class="form-group">
+                        <label for="phone-number">Phone Number:</label>
+                        <input type="tel" id="phone-number" placeholder="Enter your phone number" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="email-confirm">Email (for verification):</label>
+                        <input type="email" id="email-confirm" placeholder="Enter your email" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="submit-contact" class="btn btn-primary">
+                        <i class="fas fa-check"></i> Continue Exam
+                    </button>
+                </div>
+            </div>
         </div>
-        <button id="next-question">Next</button>
+
+        <!-- Warning Modal -->
+        <div id="warning-modal" class="modal">
+            <div class="modal-content warning">
+                <div class="modal-header">
+                    <h3><i class="fas fa-exclamation-triangle"></i> Warning</h3>
+                </div>
+                <div class="modal-body">
+                    <p id="warning-message">You have switched away from the exam tab!</p>
+                    <p><strong>Violations: <span id="warning-count">0</span>/3</strong></p>
+                    <p class="warning-note">Three violations will automatically end your exam.</p>
+                </div>
+                <div class="modal-footer">
+                    <button id="acknowledge-warning" class="btn btn-warning">
+                        <i class="fas fa-check"></i> I Understand
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
+
     <script src="/static/js/exam.js"></script>
 </body>
 </html> 

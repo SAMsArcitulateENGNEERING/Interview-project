@@ -1,5 +1,5 @@
 import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey, JSON, Date, Time, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey, JSON, Date, Time, Boolean, Text
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -20,37 +20,12 @@ class Question(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     text = Column(String, nullable=False)
-    options = Column(JSON, nullable=False)
+    options = Column(String, nullable=False)  # JSON string
     correct_answer = Column(String, nullable=False)
-    exam_session_id = Column(Integer, ForeignKey("exam_sessions.id"), nullable=True)
-    question_type = Column(String, default="mcq")  # mcq, true_false, etc.
     points = Column(Integer, default=1)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-
-class QuestionOption(Base):
-    __tablename__ = "question_options"
-
-    id = Column(Integer, primary_key=True, index=True)
-    question_id = Column(Integer, ForeignKey("questions.id"))
-    option_text = Column(String, nullable=False)
-    is_correct = Column(Boolean, default=False)
-    option_order = Column(Integer, default=0)
-
-class ExamAttempt(Base):
-    __tablename__ = "exam_attempts"
-
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
-    start_time = Column(DateTime, default=datetime.datetime.utcnow)
-    end_time = Column(DateTime)
-    duration_seconds = Column(Integer)
-    alt_tab_count = Column(Integer, default=0)
-    score = Column(Integer)
-    average_time_per_question_seconds = Column(Float)
-    answered_questions = Column(JSON, default=[])
-
-    user = relationship("User", back_populates="attempts")
+    question_type = Column(String, default="multiple_choice")
     exam_session_id = Column(Integer, ForeignKey("exam_sessions.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 class ExamSession(Base):
     __tablename__ = "exam_sessions"
@@ -59,15 +34,48 @@ class ExamSession(Base):
     title = Column(String, nullable=False)
     description = Column(String, nullable=True)
     duration_minutes = Column(Integer, default=60)
-    question_count = Column(Integer, default=10)
-    start_date = Column(Date, nullable=False)
-    start_time = Column(Time, nullable=False)
-    password = Column(String, nullable=True)
-    enable_monitoring = Column(Boolean, default=True)
-    status = Column(String, default="scheduled")  # scheduled, active, completed, cancelled
+    status = Column(String, default="draft")  # draft, active, completed, cancelled
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     
     attempts = relationship("ExamAttempt", back_populates="exam_session")
+    questions = relationship("Question", back_populates="exam_session")
 
-# Update ExamAttempt to include relationship
-ExamAttempt.exam_session = relationship("ExamSession", back_populates="attempts") 
+# Update Question to include relationship
+Question.exam_session = relationship("ExamSession", back_populates="questions")
+
+class ExamAttempt(Base):
+    __tablename__ = "exam_attempts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    exam_session_id = Column(Integer, ForeignKey("exam_sessions.id"))
+    score = Column(Float, nullable=True)
+    total_questions = Column(Integer, default=0)
+    start_time = Column(DateTime, default=datetime.datetime.utcnow)
+    end_time = Column(DateTime, nullable=True)
+    status = Column(String, default="in_progress")  # in_progress, completed, abandoned
+    violations_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    user = relationship("User", back_populates="attempts")
+    exam_session = relationship("ExamSession", back_populates="attempts")
+
+class Violation(Base):
+    __tablename__ = "violations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    exam_attempt_id = Column(Integer, ForeignKey("exam_attempts.id"))
+    violation_type = Column(String, nullable=False)  # alt_tab, window_resize, etc.
+    description = Column(String, nullable=False)
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+
+class Answer(Base):
+    __tablename__ = "answers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    exam_attempt_id = Column(Integer, ForeignKey("exam_attempts.id"))
+    question_id = Column(Integer, ForeignKey("questions.id"))
+    selected_answer = Column(String, nullable=False)
+    is_correct = Column(Boolean, default=False)
+    time_taken_seconds = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow) 

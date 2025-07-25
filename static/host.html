@@ -74,7 +74,78 @@
                         <button type="submit" class="btn btn-primary">
                             <i class="fas fa-save"></i> Create Exam
                         </button>
+                        <button type="button" id="show-questions-btn" class="btn btn-secondary" onclick="hostDashboard.showQuestionsSection()">
+                            <i class="fas fa-question-circle"></i> Create Questions
+                        </button>
                     </form>
+                </div>
+
+                <!-- Create Questions Section -->
+                <div class="panel-section" id="questions-section" style="display: none;">
+                    <h2><i class="fas fa-question-circle"></i> Create Questions</h2>
+                    <div class="question-creator">
+                        <div class="form-group">
+                            <label for="selected-exam">Select Exam</label>
+                            <select id="selected-exam" class="form-control">
+                                <option value="">Choose an exam...</option>
+                            </select>
+                        </div>
+                        <!-- AI Assistant Button -->
+                        <div class="form-group">
+                            <button type="button" id="ai-assistant-btn" class="btn btn-info">
+                                <i class="fas fa-robot"></i> AI Assistant
+                            </button>
+                        </div>
+                        <form id="question-form" class="question-form">
+                            <div class="form-group">
+                                <label for="question-text">Question Text</label>
+                                <textarea id="question-text" required placeholder="Enter your question here..."></textarea>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Options</label>
+                                <div id="options-container">
+                                    <div class="option-row">
+                                        <input type="radio" name="correct-answer" value="0" required>
+                                        <input type="text" class="option-text" placeholder="Option A" required>
+                                    </div>
+                                    <div class="option-row">
+                                        <input type="radio" name="correct-answer" value="1" required>
+                                        <input type="text" class="option-text" placeholder="Option B" required>
+                                    </div>
+                                    <div class="option-row">
+                                        <input type="radio" name="correct-answer" value="2" required>
+                                        <input type="text" class="option-text" placeholder="Option C" required>
+                                    </div>
+                                    <div class="option-row">
+                                        <input type="radio" name="correct-answer" value="3" required>
+                                        <input type="text" class="option-text" placeholder="Option D" required>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="question-points">Points</label>
+                                <input type="number" id="question-points" min="1" max="10" value="1" required>
+                            </div>
+                            
+                            <div class="form-actions">
+                                <button type="submit" class="btn btn-success">
+                                    <i class="fas fa-plus"></i> Add Question
+                                </button>
+                                <button type="button" id="add-option" class="btn btn-secondary">
+                                    <i class="fas fa-plus"></i> Add Option
+                                </button>
+                            </div>
+                        </form>
+                        
+                        <div class="questions-list">
+                            <h3>Questions in this Exam</h3>
+                            <div id="questions-list" class="questions-container">
+                                <!-- Questions will be listed here -->
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Active Exams -->
@@ -142,6 +213,26 @@
             <h2>Exam Details</h2>
             <div id="exam-details-content"></div>
         </div>
+    </div>
+
+    <!-- AI Assistant Modal -->
+    <div id="ai-assistant-modal" class="modal" style="display:none;">
+      <div class="modal-content">
+        <span class="close" id="close-ai-modal">&times;</span>
+        <h2><i class="fas fa-robot"></i> AI Question Generator</h2>
+        <div class="form-group">
+          <label for="ai-prompt">Describe a topic or paste study material:</label>
+          <textarea id="ai-prompt" rows="4" placeholder="e.g. Photosynthesis, Python basics, etc."></textarea>
+        </div>
+        <div class="form-group">
+          <label for="ai-num-questions">Number of questions:</label>
+          <input type="number" id="ai-num-questions" min="1" max="10" value="3">
+        </div>
+        <button id="ai-generate-btn" class="btn btn-primary"><i class="fas fa-magic"></i> Generate</button>
+        <div id="ai-loading" style="display:none; margin-top:10px;">Generating questions... <i class="fas fa-spinner fa-spin"></i></div>
+        <div id="ai-error" style="color:red; margin-top:10px;"></div>
+        <div id="ai-questions-preview" style="margin-top:20px;"></div>
+      </div>
     </div>
 
     <script src="/static/js/host.js"></script>
