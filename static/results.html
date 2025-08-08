@@ -5,13 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Interview Program - Results</title>
     <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        :root { --border:#e2e8f0; --text:#0f172a; --muted:#475569; --surface:#fff; --bg:#f6f7fb; --primary:#2563eb; --shadow:0 8px 30px rgba(2,6,23,0.06); }
+        body { background: var(--bg); }
+        .wrap { max-width: 960px; margin: 32px auto; padding: 0 16px; }
+        .card { background: var(--surface); border:1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); padding: 20px; margin-bottom: 16px; }
+        .header { display:flex; align-items:center; justify-content:space-between; margin-bottom: 12px; }
+        .header h1 { margin:0; font-size: 1.6rem; }
+        .btn-primary { background: var(--primary); color: #fff; border:none; border-radius: 10px; padding: 10px 14px; font-weight: 800; cursor:pointer; }
+    </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Exam Results</h1>
-        <div id="results-summary"></div>
-        <div id="answered-questions"></div>
-        <button id="sorting-page">Go to Sorting Page</button>
+    <div class="wrap">
+        <div class="card header">
+            <h1>Exam Results</h1>
+            <button id="sorting-page" class="btn btn-primary">All Results</button>
+        </div>
+        <div class="card" id="results-summary"></div>
+        <div class="card" id="answered-questions"></div>
     </div>
     <script src="/static/js/results.js"></script>
 </body>

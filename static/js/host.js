@@ -9,6 +9,9 @@ class HostDashboard {
             activeParticipants: 0,
             totalViolations: 0
         };
+        this.isLoadingQuestions = false;
+        this.questionsCache = [];
+        this.currentExamId = null;
         
         this.init();
     }
@@ -42,7 +45,8 @@ class HostDashboard {
 
         // Selected exam change
         document.getElementById('selected-exam').addEventListener('change', (e) => {
-            this.loadExamQuestions(e.target.value);
+            this.currentExamId = e.target.value || null;
+            this.loadExamQuestions(this.currentExamId);
         });
 
         // Modal close
@@ -131,13 +135,30 @@ class HostDashboard {
     }
 
     async createQuestion() {
-        const questionText = document.getElementById('question-text').value;
+        const questionText = document.getElementById('question-text').value.trim();
         const points = parseInt(document.getElementById('question-points').value);
         const examId = document.getElementById('selected-exam').value;
         
-        // Get options
-        const optionInputs = document.querySelectorAll('.option-text');
-        const options = Array.from(optionInputs).map(input => input.value).filter(value => value.trim() !== '');
+        if (!examId) {
+            this.showMessage('Please select an exam before creating questions', 'error');
+            return;
+        }
+        if (!questionText) {
+            this.showMessage('Please enter the question text', 'error');
+            return;
+        }
+        
+        // Get options in original order; require all to be filled to keep indices stable
+        const optionInputs = Array.from(document.querySelectorAll('.option-text'));
+        const options = optionInputs.map(input => input.value.trim());
+        if (options.some(v => v === '')) {
+            this.showMessage('Please fill all option fields (A, B, C, D)', 'error');
+            return;
+        }
+        if (options.length < 2) {
+            this.showMessage('Please provide at least 2 options', 'error');
+            return;
+        }
         
         // Get correct answer
         const correctAnswerRadio = document.querySelector('input[name="correct-answer"]:checked');
@@ -145,19 +166,12 @@ class HostDashboard {
             this.showMessage('Please select a correct answer', 'error');
             return;
         }
-        
         const correctAnswerIndex = parseInt(correctAnswerRadio.value);
+        if (isNaN(correctAnswerIndex) || correctAnswerIndex < 0 || correctAnswerIndex >= options.length) {
+            this.showMessage('Please select a valid correct answer', 'error');
+            return;
+        }
         const correctAnswer = options[correctAnswerIndex];
-        
-        if (options.length < 2) {
-            this.showMessage('Please provide at least 2 options', 'error');
-            return;
-        }
-        
-        if (!correctAnswer) {
-            this.showMessage('Please provide a correct answer', 'error');
-            return;
-        }
 
         try {
             const formData = new FormData();
@@ -165,9 +179,7 @@ class HostDashboard {
             formData.append('options', JSON.stringify(options));
             formData.append('correct_answer', correctAnswer);
             formData.append('points', points);
-            if (examId) {
-                formData.append('exam_id', examId);
-            }
+            formData.append('exam_id', examId);
 
             const response = await fetch('/api/create_question', {
                 method: 'POST',
@@ -180,9 +192,17 @@ class HostDashboard {
                 this.showMessage('Question created successfully!', 'success');
                 document.getElementById('question-form').reset();
                 this.resetOptions();
-                if (examId) {
-                    this.loadExamQuestions(examId);
-                }
+                // Append locally using server order_index if provided
+                this.questionsCache = this.questionsCache || [];
+                this.questionsCache.push({
+                    id: result.id,
+                    text: questionText,
+                    options: options,
+                    correct_answer: correctAnswer,
+                    points: points,
+                    order_index: result.order_index || (this.questionsCache.length + 1)
+                });
+                this.renderQuestions(this.questionsCache);
             } else {
                 this.showMessage(result.detail || 'Failed to create question', 'error');
             }
@@ -231,71 +251,73 @@ class HostDashboard {
     }
 
     async loadExamQuestions(examId) {
+        const container = document.getElementById('questions-list');
         if (!examId) {
-            document.getElementById('questions-list').innerHTML = '<p class="message info">Please select an exam to view questions</p>';
+            container.innerHTML = '<p class="message info">Please select an exam to view questions</p>';
+            this.questionsCache = [];
             return;
         }
-
+        // debounce concurrent loads
+        if (this.isLoadingQuestions) return;
+        this.isLoadingQuestions = true;
+        container.innerHTML = '<p class="message info">Loading questions...</p>';
         try {
             const response = await fetch(`/api/exam/${examId}/questions`);
             const questions = await response.json();
-            
-            this.renderQuestions(questions);
+            this.questionsCache = Array.isArray(questions) ? questions : [];
+            // Render on next animation frame to avoid flicker
+            requestAnimationFrame(() => this.renderQuestions(this.questionsCache));
         } catch (error) {
             console.error('Error loading exam questions:', error);
-            document.getElementById('questions-list').innerHTML = '<p class="message error">Error loading questions</p>';
+            container.innerHTML = '<p class="message error">Error loading questions</p>';
+        } finally {
+            this.isLoadingQuestions = false;
         }
     }
 
     renderQuestions(questions) {
         const container = document.getElementById('questions-list');
-        container.innerHTML = '';
-
-        if (questions.length === 0) {
+        const frag = document.createDocumentFragment();
+        if (!questions || questions.length === 0) {
             container.innerHTML = '<p class="message info">No questions in this exam yet</p>';
             return;
         }
-
+        container.innerHTML = '';
         questions.forEach((question, index) => {
             const questionElement = this.createQuestionElement(question, index + 1);
-            container.appendChild(questionElement);
+            frag.appendChild(questionElement);
         });
+        container.appendChild(frag);
     }
 
     createQuestionElement(question, number) {
         const div = document.createElement('div');
         div.className = 'question-item';
-        
-        const optionsList = question.options.map((option, index) => {
+        const options = Array.isArray(question.options) ? question.options : (JSON.parse(question.options || '[]'));
+        const optionsList = options.map((option, idx) => {
             const isCorrect = option === question.correct_answer;
             return `
                 <div class="option-item ${isCorrect ? 'correct' : ''}">
-                    <span class="option-label">${String.fromCharCode(65 + index)}</span>
+                    <span class="option-label">${String.fromCharCode(65 + idx)}</span>
                     <span class="option-text">${option}</span>
                     ${isCorrect ? '<i class="fas fa-check"></i>' : ''}
                 </div>
             `;
         }).join('');
-
         div.innerHTML = `
             <div class="question-header">
-                <span class="question-number">Question ${number}</span>
+                <span class="question-number">#${question.order_index || number}</span>
                 <span class="question-points">${question.points} pts</span>
             </div>
             <div class="question-text">${question.text}</div>
-            <div class="options-list">
-                ${optionsList}
-            </div>
+            <div class="options-list">${optionsList}</div>
             <div class="question-actions">
-                <button class="btn btn-sm btn-secondary" onclick="hostDashboard.editQuestion(${question.id})">
-                    <i class="fas fa-edit"></i> Edit
-                </button>
-                <button class="btn btn-sm btn-danger" onclick="hostDashboard.deleteQuestion(${question.id})">
-                    <i class="fas fa-trash"></i> Delete
-                </button>
+                <button class="btn btn-sm btn-secondary" onclick="hostDashboard.openEditQuestion(${question.id})"><i class="fas fa-edit"></i> Edit</button>
+                <button class="btn btn-sm btn-danger" onclick="hostDashboard.deleteQuestion(${question.id})"><i class="fas fa-trash"></i> Delete</button>
+                <button class="btn btn-sm btn-secondary" onclick="hostDashboard.moveQuestion(${question.id}, 'up')"><i class="fas fa-arrow-up"></i></button>
+                <button class="btn btn-sm btn-secondary" onclick="hostDashboard.moveQuestion(${question.id}, 'down')"><i class="fas fa-arrow-down"></i></button>
             </div>
         `;
-        
         return div;
     }
 
@@ -311,16 +333,106 @@ class HostDashboard {
 
             if (response.ok) {
                 this.showMessage('Question deleted successfully!', 'success');
-                const examId = document.getElementById('selected-exam').value;
-                if (examId) {
-                    this.loadExamQuestions(examId);
-                }
+                // remove locally to prevent flicker
+                this.questionsCache = this.questionsCache.filter(q => q.id !== questionId);
+                this.renderQuestions(this.questionsCache);
             } else {
                 const result = await response.json();
                 this.showMessage(result.detail || 'Failed to delete question', 'error');
             }
         } catch (error) {
             this.showMessage('Error deleting question: ' + error.message, 'error');
+        }
+    }
+
+    openEditQuestion = async (questionId) => {
+        try {
+            const res = await fetch(`/get_question/${questionId}`);
+            const q = await res.json();
+            const options = Array.isArray(q.options) ? q.options : (JSON.parse(q.options || '[]'));
+            const html = `
+                <div>
+                    <h3>Edit Question</h3>
+                    <label>Text</label>
+                    <textarea id="edit-q-text" style="width:100%;min-height:80px;">${q.text || ''}</textarea>
+                    <label>Options</label>
+                    ${options.map((opt,i)=>`<div style='display:flex;gap:8px;align-items:center;margin:6px 0;'><span>${String.fromCharCode(65+i)}.</span><input id='edit-opt-${i}' value='${opt}' style='flex:1;padding:6px;border:1px solid var(--border);background:#0b1220;color:var(--text);border-radius:6px;'><input type='radio' name='edit-correct' ${opt===q.correct_answer?"checked":""} value='${i}'></div>`).join('')}
+                    <label>Points</label>
+                    <input id="edit-q-points" type="number" value="${q.points || 1}" style="width:120px;padding:6px;border:1px solid var(--border);background:#0b1220;color:var(--text);border-radius:6px;" />
+                    <div style="margin-top:12px;display:flex;gap:8px;">
+                        <button class="btn btn-primary" onclick="hostDashboard.saveQuestionEdit(${q.id})">Save</button>
+                        <button class="btn btn-secondary" onclick="document.getElementById('host-modal').remove()">Cancel</button>
+                    </div>
+                </div>`;
+            this.showModal(html);
+        } catch (e) {
+            this.showMessage('Failed to open editor', 'error');
+        }
+    }
+
+    saveQuestionEdit = async (questionId) => {
+        try {
+            const text = document.getElementById('edit-q-text').value.trim();
+            const points = parseInt(document.getElementById('edit-q-points').value) || 1;
+            const optionInputs = Array.from(document.querySelectorAll('[id^=edit-opt-]'));
+            const options = optionInputs.map(i => i.value.trim()).filter(Boolean);
+            const correctIdxInput = document.querySelector('input[name="edit-correct"]:checked');
+            if (!text || options.length < 2 || !correctIdxInput) {
+                this.showMessage('Provide text, at least 2 options, and select correct answer', 'error');
+                return;
+            }
+            const correct_answer = options[parseInt(correctIdxInput.value)];
+            const res = await fetch(`/api/question/${questionId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text, options, correct_answer, points })
+            });
+            if (res.ok) {
+                this.showMessage('Question updated', 'success');
+                const modal = document.getElementById('host-modal');
+                if (modal) modal.remove();
+                // update cache & UI without refetch
+                this.questionsCache = this.questionsCache.map(q => q.id === questionId ? { ...q, text, options, correct_answer, points } : q);
+                this.renderQuestions(this.questionsCache);
+            } else {
+                const out = await res.json();
+                this.showMessage(out.detail || 'Failed to update', 'error');
+            }
+        } catch (e) {
+            this.showMessage('Error updating question: ' + e.message, 'error');
+        }
+    }
+
+    moveQuestion = async (questionId, dir) => {
+        const examId = this.currentExamId || document.getElementById('selected-exam').value;
+        if (!examId) return;
+        // local reorder for instant feedback
+        const order = this.questionsCache.map(q => q.id);
+        const idx = order.indexOf(questionId);
+        if (idx === -1) return;
+        const newOrder = order.slice();
+        if (dir === 'up' && idx > 0) {
+            [newOrder[idx-1], newOrder[idx]] = [newOrder[idx], newOrder[idx-1]];
+        } else if (dir === 'down' && idx < newOrder.length - 1) {
+            [newOrder[idx+1], newOrder[idx]] = [newOrder[idx], newOrder[idx+1]];
+        } else {
+            return;
+        }
+        // apply locally
+        const idToQuestion = new Map(this.questionsCache.map(q => [q.id, q]));
+        this.questionsCache = newOrder.map((id, i) => ({ ...idToQuestion.get(id), order_index: i + 1 }));
+        this.renderQuestions(this.questionsCache);
+        // sync to server
+        try {
+            const r = await fetch(`/api/exam/${examId}/reorder`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ order: newOrder })
+            });
+            if (!r.ok) throw new Error('Reorder failed');
+        } catch (err) {
+            this.showMessage('Failed to persist order, reloading...', 'error');
+            this.loadExamQuestions(examId);
         }
     }
 
@@ -881,6 +993,7 @@ window.onclick = function(event) {
     }
 };
 
+// Enhance AI Assistant to use unique endpoint and pass exam context
 if (aiGenerateBtn) {
     aiGenerateBtn.onclick = async (e) => {
         e.preventDefault();
@@ -890,15 +1003,16 @@ if (aiGenerateBtn) {
         try {
             const prompt = aiPrompt.value.trim();
             const numQuestions = parseInt(aiNumQuestions.value);
+            const examId = document.getElementById('selected-exam').value || null;
             if (!prompt) {
                 aiError.textContent = 'Please enter a topic or material.';
                 aiLoading.style.display = 'none';
                 return;
             }
-            const response = await fetch('/api/ai_generate_questions', {
+            const response = await fetch('/api/ai_generate_questions_unique', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt, num_questions: numQuestions })
+                body: JSON.stringify({ prompt, num_questions: numQuestions, exam_id: examId })
             });
             const result = await response.json();
             aiLoading.style.display = 'none';
@@ -906,11 +1020,10 @@ if (aiGenerateBtn) {
                 aiQuestionsPreview.innerHTML = result.questions.map((q, idx) => `
                     <div class="ai-question-preview">
                         <b>Q${idx+1}:</b> ${q.question}<br>
-                        <ul>${q.options.map((opt, i) => `<li${opt===q.correct_answer?" style=\"font-weight:bold;color:green;\"":""}>${String.fromCharCode(65+i)}. ${opt}</li>`).join('')}</ul>
+                        <ul>${q.options.map((opt, i) => `<li${opt===q.correct_answer?" style=\"font-weight:bold;color:green;\"":''}>${String.fromCharCode(65+i)}. ${opt}</li>`).join('')}</ul>
                         <button class="btn btn-sm btn-success" onclick="addAiQuestionToForm(${idx})">Add to Form</button>
                     </div>
                 `).join('');
-                // Store questions in window for access
                 window.aiGeneratedQuestions = result.questions;
             } else {
                 aiError.textContent = result.error || 'Failed to generate questions.';

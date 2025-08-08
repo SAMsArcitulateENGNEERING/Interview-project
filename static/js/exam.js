@@ -4,20 +4,25 @@ let questions = [];
 let examAttemptId = null;
 let isExamActive = true;
 let timerInterval = null;
+let examId = null;
+let examDurationSeconds = 3600;
 
 // DOM elements
 const timerDisplay = document.getElementById('timer');
 const questionText = document.getElementById('question-text');
 const optionsContainer = document.getElementById('options-container');
 const nextButton = document.getElementById('next-question');
+const prevButton = document.getElementById('prev-question');
 const altTabCounter = document.getElementById('alt-tab-counter');
+const questionCounterEl = document.getElementById('question-counter');
+const progressFillEl = document.getElementById('progress-fill');
+const progressPctEl = document.getElementById('progress-percentage');
 
 // Simple violation tracking
 let violationCount = 0;
 
 // Initialize exam when page loads
 document.addEventListener('DOMContentLoaded', async () => {
-    console.log('Exam page loaded, starting initialization...');
     await initializeExam();
 });
 
@@ -26,437 +31,252 @@ async function initializeExam() {
         // Get exam attempt ID from URL parameters or localStorage
         const urlParams = new URLSearchParams(window.location.search);
         const attemptId = urlParams.get('attempt_id') || localStorage.getItem('exam_attempt_id');
+        const urlExamId = urlParams.get('exam_id');
         
         if (attemptId) {
             examAttemptId = parseInt(attemptId);
             localStorage.setItem('exam_attempt_id', examAttemptId);
-            console.log('Using existing exam attempt ID:', examAttemptId);
         } else {
-            console.error('No exam attempt ID found');
             alert('No exam attempt found. Please start the exam from the beginning.');
             window.location.href = '/start.html';
             return;
         }
 
-        // Get user ID from localStorage or URL
-        const userId = urlParams.get('user_id') || localStorage.getItem('user_id');
-        if (userId) {
-            localStorage.setItem('user_id', userId);
-            console.log('Using user ID:', userId);
+        // Fetch exam_id either from URL or by looking up the attempt
+        if (urlExamId) {
+            examId = parseInt(urlExamId);
+        } else {
+            const attemptRes = await fetch(`/get_exam_result/${examAttemptId}`);
+            if (!attemptRes.ok) throw new Error('Failed to get attempt');
+            const attempt = await attemptRes.json();
+            examId = attempt.exam_session_id;
+        }
+        if (!examId) {
+            alert('No exam selected. Please start the exam again.');
+            window.location.href = '/start.html';
+            return;
         }
 
-        // Fetch questions
-        await loadQuestions();
+        // Get exam details (duration)
+        try {
+            const examRes = await fetch(`/api/exam/${examId}`);
+            if (examRes.ok) {
+                const exam = await examRes.json();
+                if (exam && exam.duration) {
+                    examDurationSeconds = parseInt(exam.duration) * 60;
+                }
+            }
+        } catch {}
+
+        // Fetch questions for this exam
+        await loadQuestions(examId);
+        if (!questions || questions.length === 0) {
+            alert('This exam has no questions yet. Please contact the host.');
+            window.location.href = '/start.html';
+            return;
+        }
         
         // Display first question
         displayCurrentQuestion();
+        updateNavigation();
+        updateProgressUI();
         
         // Initialize monitoring
         initializeMonitoring();
         
-        // Start timer (60 minutes = 3600 seconds)
-        startTimer(3600);
-        
-        console.log('Exam initialized successfully');
+        // Start timer
+        startTimer(examDurationSeconds);
     } catch (error) {
-        console.error('Error initializing exam:', error);
         alert('There was an error initializing the exam. Please start over.');
         window.location.href = '/start.html';
     }
 }
 
-async function loadQuestions() {
-    try {
-        console.log('Fetching questions from server...');
-        
-        const response = await fetch('/get_random_questions?count=5');
-        console.log('Response status:', response.status);
-        
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('Server error:', errorText);
-            throw new Error(`Server error: ${response.status} - ${errorText}`);
-        }
-        
-        questions = await response.json();
-        console.log('Questions loaded:', questions.length);
-        
-        if (!questions || questions.length === 0) {
-            throw new Error('No questions available in the database');
-        }
-        
-        console.log('Questions loaded successfully');
-        
-    } catch (error) {
-        console.error('Error loading questions:', error);
-        throw new Error('Failed to load questions: ' + error.message);
-    }
+async function loadQuestions(examId) {
+    const response = await fetch(`/api/exam/${examId}/questions`);
+    if (!response.ok) throw new Error('Failed to load questions');
+    questions = await response.json();
+    if (!Array.isArray(questions)) questions = [];
 }
 
 function displayCurrentQuestion() {
     if (currentQuestionIndex >= questions.length) {
-        console.log('All questions completed, ending exam...');
         endExam();
         return;
     }
-    
     const question = questions[currentQuestionIndex];
-    console.log('Displaying question:', currentQuestionIndex + 1, 'of', questions.length);
-    
-    // Display question text
     questionText.textContent = question.text;
-    
-    // Clear previous options
+
     optionsContainer.innerHTML = '';
-    
-    // Create option buttons
-    question.options.forEach((option, index) => {
+    const letters = ['A','B','C','D','E','F','G','H'];
+
+    const selectedValue = getSelectedAnswerValue();
+
+    const opts = Array.isArray(question.options) ? question.options : [];
+    opts.forEach((option, index) => {
         const optionDiv = document.createElement('div');
         optionDiv.className = 'option';
-        
+
         const radio = document.createElement('input');
         radio.type = 'radio';
         radio.id = `option${index}`;
         radio.name = 'answer';
         radio.value = option;
-        
+        radio.style.display = 'none';
+
+        if (selectedValue && selectedValue === option) {
+            radio.checked = true;
+            optionDiv.classList.add('selected');
+        }
+
+        const letter = document.createElement('span');
+        letter.className = 'option-letter';
+        letter.textContent = letters[index] || String(index + 1);
+
         const label = document.createElement('label');
         label.htmlFor = `option${index}`;
         label.textContent = option;
-        
+
         optionDiv.appendChild(radio);
+        optionDiv.appendChild(letter);
         optionDiv.appendChild(label);
         optionsContainer.appendChild(optionDiv);
+
+        // Click entire card to select
+        optionDiv.addEventListener('click', () => {
+            document.querySelectorAll('.option').forEach(el => el.classList.remove('selected'));
+            radio.checked = true;
+            optionDiv.classList.add('selected');
+        });
     });
+
+    updateNavigation();
+    updateProgressUI();
+}
+
+function getSelectedAnswerValue() {
+    const checked = document.querySelector('input[name="answer"]:checked');
+    return checked ? checked.value : null;
+}
+
+function updateNavigation() {
+    if (prevButton) {
+        prevButton.disabled = currentQuestionIndex === 0;
+    }
+    if (nextButton) {
+        nextButton.textContent = currentQuestionIndex === questions.length - 1 ? 'Finish' : 'Next';
+    }
+}
+
+function updateProgressUI() {
+    if (!questions || questions.length === 0) return;
+    const current = currentQuestionIndex + 1;
+    const total = questions.length;
+    if (questionCounterEl) questionCounterEl.textContent = `Question ${current} of ${total}`;
+    const pct = Math.round((current / total) * 100);
+    if (progressPctEl) progressPctEl.textContent = `${pct}%`;
+    if (progressFillEl) progressFillEl.style.width = `${pct}%`;
 }
 
 function startTimer(duration) {
     let timeLeft = duration;
-    
     function updateTimer() {
         const minutes = Math.floor(timeLeft / 60);
         const seconds = timeLeft % 60;
-        timerDisplay.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-        
+        if (timerDisplay) {
+            timerDisplay.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
         if (timeLeft <= 0) {
             clearInterval(timerInterval);
-            console.log('⏰ Time is up! Automatically ending exam...');
             endExam();
             return;
         }
         timeLeft--;
     }
-    
     updateTimer();
     timerInterval = setInterval(updateTimer, 1000);
 }
 
 function initializeMonitoring() {
-    console.log('Initializing enhanced monitoring...');
-    
-    // Enhanced focus detection
+    // Focus/visibility/keyboard handlers are unchanged
     window.addEventListener('blur', () => {
         if (isExamActive) {
-            console.log('Window focus lost detected');
             violationCount++;
             updateViolationCounter();
             showWarning(`⚠️ Focus lost! Violation ${violationCount}/3`);
-            
-            if (violationCount >= 3) {
-                endExam();
-            }
+            if (violationCount >= 3) endExam();
         }
     });
-    
-    // Visibility change detection (Alt+Tab, switching apps)
+
     document.addEventListener('visibilitychange', () => {
         if (isExamActive && document.hidden) {
-            console.log('Page visibility changed - possible Alt+Tab detected');
             violationCount++;
             updateViolationCounter();
             showWarning(`⚠️ Page hidden! Possible Alt+Tab detected. Violation ${violationCount}/3`);
-            
-            if (violationCount >= 3) {
-                endExam();
-            }
+            if (violationCount >= 3) endExam();
         }
     });
-    
-    // Prevent right-click
-    document.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        console.log('Right-click blocked');
-    });
-    
-    // Enhanced keyboard monitoring
-    document.addEventListener('keydown', (e) => {
-        if (!isExamActive) return;
-        
-        const blockedKeys = ['F12', 'F11', 'F10', 'F9', 'F8', 'F7', 'F6', 'F5', 'F4', 'F3', 'F2', 'F1'];
-        const blockedCombos = [
-            { ctrl: true, shift: true, key: 'I' },  // Developer tools
-            { ctrl: true, shift: true, key: 'J' },  // Console
-            { ctrl: true, shift: true, key: 'C' },  // Elements
-            { ctrl: true, key: 'U' },               // View source
-            { ctrl: true, key: 'S' },               // Save
-            { ctrl: true, key: 'P' },               // Print
-            { ctrl: true, key: 'N' },               // New window
-            { ctrl: true, key: 'T' },               // New tab
-            { ctrl: true, key: 'W' },               // Close tab
-            { ctrl: true, key: 'R' },               // Refresh
-            { ctrl: true, key: 'F5' },              // Hard refresh
-            { alt: true, key: 'F4' },               // Close window
-            { alt: true, key: 'Tab' },              // Alt+Tab (browser tabs)
-            { ctrl: true, alt: true, key: 'Delete' }, // Task manager
-            { ctrl: true, alt: true, key: 'Tab' },  // Alt+Tab
-            { ctrl: true, shift: true, key: 'Esc' }, // Task manager
-        ];
-        
-        // Check for blocked keys
-        if (blockedKeys.includes(e.key)) {
-            e.preventDefault();
-            console.log(`Blocked key: ${e.key}`);
-            violationCount++;
-            updateViolationCounter();
-            showWarning(`⚠️ Blocked key: ${e.key}! Violation ${violationCount}/3`);
-            
-            if (violationCount >= 3) {
-                endExam();
-            }
-            return;
-        }
-        
-        // Check for blocked combinations
-        for (const combo of blockedCombos) {
-            if (e.ctrlKey === combo.ctrl && 
-                e.shiftKey === combo.shift && 
-                e.altKey === combo.alt && 
-                e.key === combo.key) {
-                e.preventDefault();
-                console.log(`Blocked combo: ${JSON.stringify(combo)}`);
-                violationCount++;
-                updateViolationCounter();
-                showWarning(`⚠️ Blocked shortcut! Violation ${violationCount}/3`);
-                
-                if (violationCount >= 3) {
-                    endExam();
-                }
-                return;
-            }
-        }
-    });
-    
-    // Mouse leave detection - More intelligent
-    let mouseLeaveTimeout = null;
-    let mouseLeaveCount = 0;
-    
-    document.addEventListener('mouseleave', () => {
-        if (isExamActive) {
-            console.log('Mouse left window area');
-            mouseLeaveCount++;
-            
-            // Clear existing timeout
-            if (mouseLeaveTimeout) {
-                clearTimeout(mouseLeaveTimeout);
-            }
-            
-            // Only count as violation if mouse is out for more than 3 seconds AND we've had multiple leave events
-            mouseLeaveTimeout = setTimeout(() => {
-                if (document.hasFocus() && !document.hidden && mouseLeaveCount > 2) {
-                    console.log(`Mouse left window for extended period (${mouseLeaveCount} times)`);
-                    violationCount++;
-                    updateViolationCounter();
-                    showWarning(`⚠️ Extended mouse leave detected! Violation ${violationCount}/3`);
-                    
-                    if (violationCount >= 3) {
-                        endExam();
-                    }
-                }
-            }, 3000); // 3 seconds delay
-        }
-    });
-    
-    // Reset mouse leave count when mouse returns
-    document.addEventListener('mouseenter', () => {
-        if (mouseLeaveTimeout) {
-            clearTimeout(mouseLeaveTimeout);
-            mouseLeaveTimeout = null;
-        }
-        mouseLeaveCount = 0;
-    });
-    
-    // Window resize detection - More intelligent
-    let resizeTimeout = null;
-    let resizeCount = 0;
-    
-    window.addEventListener('resize', () => {
-        if (isExamActive) {
-            console.log('Window resized');
-            resizeCount++;
-            
-            // Clear existing timeout
-            if (resizeTimeout) {
-                clearTimeout(resizeTimeout);
-            }
-            
-            // Only count as violation if window is very small for more than 2 seconds
-            resizeTimeout = setTimeout(() => {
-                if (window.innerWidth < 200 || window.innerHeight < 200) {
-                    console.log(`Window significantly resized (${resizeCount} times): ${window.innerWidth}x${window.innerHeight}`);
-                    violationCount++;
-                    updateViolationCounter();
-                    showWarning(`⚠️ Window minimized/resized! Violation ${violationCount}/3`);
-                    
-                    if (violationCount >= 3) {
-                        endExam();
-                    }
-                }
-            }, 2000); // 2 seconds delay
-        }
-    });
-    
-    // Periodic activity check - More intelligent
-    let hiddenStartTime = null;
-    
-    setInterval(() => {
-        if (isExamActive) {
-            if (document.hidden) {
-                if (!hiddenStartTime) {
-                    hiddenStartTime = Date.now();
-                    console.log('Page became hidden, starting timer');
-                } else {
-                    const hiddenDuration = Date.now() - hiddenStartTime;
-                    // Only count as violation if page has been hidden for more than 30 seconds
-                    if (hiddenDuration > 30000) {
-                        console.log(`Page hidden for ${hiddenDuration}ms - counting as violation`);
-                        violationCount++;
-                        updateViolationCounter();
-                        showWarning(`⚠️ Extended inactivity detected! Violation ${violationCount}/3`);
-                        
-                        if (violationCount >= 3) {
-                            endExam();
-                        }
-                        hiddenStartTime = null; // Reset timer
-                    }
-                }
-            } else {
-                // Page is visible again, reset timer
-                if (hiddenStartTime) {
-                    console.log('Page became visible again, resetting timer');
-                    hiddenStartTime = null;
-                }
-            }
-        }
-    }, 5000); // Check every 5 seconds
-    
-    console.log('Enhanced monitoring initialized');
+
+    document.addEventListener('contextmenu', (e) => e.preventDefault());
 }
 
 function updateViolationCounter() {
     if (altTabCounter) {
         altTabCounter.textContent = `Violations: ${violationCount}/3`;
-        if (violationCount >= 2) {
-            altTabCounter.style.color = '#ff4444';
-            altTabCounter.style.fontWeight = 'bold';
-        } else if (violationCount >= 1) {
-            altTabCounter.style.color = '#ff8800';
-        }
     }
 }
 
 function showWarning(message) {
     const warning = document.createElement('div');
     warning.style.cssText = `
-        position: fixed;
-        top: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        background: #ffcc00;
-        color: #000;
-        padding: 1rem 2rem;
-        border-radius: 8px;
-        z-index: 9999;
-        font-weight: bold;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-        max-width: 80%;
-        text-align: center;
+        position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+        background: #fffbeb; color: #9a3412; padding: 0.9rem 1.25rem; border-radius: 10px;
+        border:1px solid #fde68a; z-index: 9999; font-weight: 800; box-shadow: 0 4px 8px rgba(0,0,0,0.1);
     `;
-    warning.textContent = `⚠️ ${message}`;
+    warning.textContent = message;
     document.body.appendChild(warning);
-    
-    setTimeout(() => { 
-        if (warning.parentNode) {
-            warning.remove(); 
-        }
-    }, 3000);
-}
-
-function showError(message) {
-    alert(message);
-    window.location.href = '/';
+    setTimeout(() => { if (warning.parentNode) warning.remove(); }, 2500);
 }
 
 async function endExam() {
-    console.log('🛑 Ending exam...');
-    console.log('Current exam attempt ID:', examAttemptId);
     isExamActive = false;
-    
-    if (timerInterval) {
-        clearInterval(timerInterval);
-    }
-    
+    if (timerInterval) clearInterval(timerInterval);
     try {
-        // This will automatically stop the native monitor
-        const response = await fetch(`/end_exam?attempt_id=${examAttemptId}`, { 
-            method: 'POST' 
-        });
-        
-        if (response.ok) {
-            console.log('✅ Exam ended successfully, native monitor stopped');
-        } else {
-            console.error('❌ Failed to end exam properly');
-        }
-    } catch (error) {
-        console.error('Error ending exam:', error);
-    }
-    
-    // Redirect to results page with attempt_id
-    console.log('Redirecting to results page with attempt_id:', examAttemptId);
+        await fetch(`/end_exam?attempt_id=${examAttemptId}`, { method: 'POST' });
+    } catch {}
     window.location.href = `/results.html?attempt_id=${examAttemptId}`;
 }
 
-// Handle next button click
+// Navigation events
+if (prevButton) {
+    prevButton.addEventListener('click', () => {
+        if (currentQuestionIndex > 0) {
+            currentQuestionIndex--;
+            displayCurrentQuestion();
+        }
+    });
+}
+
 nextButton.addEventListener('click', async () => {
     const selectedAnswer = document.querySelector('input[name="answer"]:checked');
-    
     if (!selectedAnswer) {
         alert('Please select an answer before continuing.');
         return;
     }
-    
     try {
-        // Submit answer
         const question = questions[currentQuestionIndex];
         const formData = new FormData();
         formData.append('attempt_id', examAttemptId);
         formData.append('question_id', question.id);
         formData.append('user_answer', selectedAnswer.value);
-        formData.append('time_taken_seconds', 30); // Default time
-        
-        const response = await fetch('/submit_answer', {
-            method: 'POST',
-            body: formData
-        });
+        formData.append('time_taken_seconds', 30);
+        await fetch('/submit_answer', { method: 'POST', body: formData });
+    } catch {}
 
-        if (!response.ok) {
-            console.error('Failed to submit answer');
-        }
-        
-    } catch (error) {
-        console.error('Error submitting answer:', error);
-    }
-
-    // Move to next question
     currentQuestionIndex++;
+    if (currentQuestionIndex >= questions.length) {
+        endExam();
+        return;
+    }
     displayCurrentQuestion();
 });

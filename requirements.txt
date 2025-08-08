@@ -7,4 +7,5 @@ python-jose[cryptography]
 passlib[bcrypt]
 python-dotenv
 email-validator
-psycopg2-binary 
+psycopg2-binary
+requests 

@@ -4,6 +4,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import HTTPBearer
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from sqlalchemy import text
 import random
 import datetime
 import json
@@ -37,6 +38,49 @@ native_monitor_listener = None
 native_monitor_thread = None
 current_exam_attempt_id = None
 native_violations = []
+
+# --- Lightweight SQLite migrations ---
+def run_sqlite_migrations():
+    try:
+        with engine.begin() as connection:
+            def table_has_column(table_name: str, column_name: str) -> bool:
+                rows = connection.execute(text(f"PRAGMA table_info({table_name})")).fetchall()
+                for row in rows:
+                    try:
+                        # SQLite returns: cid, name, type, notnull, dflt_value, pk
+                        if row[1] == column_name or getattr(row, "name", None) == column_name:
+                            return True
+                    except Exception:
+                        pass
+                return False
+
+            # exam_sessions: add start_date, end_date
+            if not table_has_column("exam_sessions", "start_date"):
+                connection.execute(text("ALTER TABLE exam_sessions ADD COLUMN start_date DATETIME"))
+            if not table_has_column("exam_sessions", "end_date"):
+                connection.execute(text("ALTER TABLE exam_sessions ADD COLUMN end_date DATETIME"))
+
+            # exam_attempts: add alt_tab_count, answered_questions, duration_seconds, average_time_per_question_seconds
+            if not table_has_column("exam_attempts", "alt_tab_count"):
+                connection.execute(text("ALTER TABLE exam_attempts ADD COLUMN alt_tab_count INTEGER DEFAULT 0"))
+                connection.execute(text("UPDATE exam_attempts SET alt_tab_count = 0 WHERE alt_tab_count IS NULL"))
+            if not table_has_column("exam_attempts", "answered_questions"):
+                connection.execute(text("ALTER TABLE exam_attempts ADD COLUMN answered_questions TEXT"))
+                connection.execute(text("UPDATE exam_attempts SET answered_questions = '[]' WHERE answered_questions IS NULL"))
+            if not table_has_column("exam_attempts", "duration_seconds"):
+                connection.execute(text("ALTER TABLE exam_attempts ADD COLUMN duration_seconds INTEGER"))
+            if not table_has_column("exam_attempts", "average_time_per_question_seconds"):
+                connection.execute(text("ALTER TABLE exam_attempts ADD COLUMN average_time_per_question_seconds FLOAT"))
+            # questions: add order_index
+            try:
+                rows = connection.execute(text("PRAGMA table_info(questions)")).fetchall()
+                has_order = any((row[1] if len(row) > 1 else getattr(row, "name", None)) == "order_index" for row in rows)
+                if not has_order:
+                    connection.execute(text("ALTER TABLE questions ADD COLUMN order_index INTEGER"))
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"⚠️ Migration warning: {e}")
 
 # Native monitoring class
 class NativeExamMonitor:
@@ -216,7 +260,7 @@ def login(user_credentials: schemas.UserLogin, db: Session = Depends(get_db)):
 def read_users_me(current_user: models.User = Depends(get_current_user)):
     return current_user
 
-@app.get("/get_random_questions", response_model=List[schemas.Question])
+@app.get("/get_random_questions")
 def get_random_questions(count: int = 5, db: Session = Depends(get_db)):
     try:
         print(f"Fetching {count} random questions...")
@@ -230,14 +274,32 @@ def get_random_questions(count: int = 5, db: Session = Depends(get_db)):
         
         # If we have fewer questions than requested, return all available questions
         if len(questions) < count:
-            print(f"Returning all {len(questions)} available questions")
-            return questions
+            selected = questions
+        else:
+            selected = random.sample(questions, count)
         
-        # Return random sample
-        selected_questions = random.sample(questions, count)
-        print(f"Returning {len(selected_questions)} random questions")
-        return selected_questions
+        # Serialize with options as an array
+        serialized = []
+        for q in selected:
+            opts = q.options
+            try:
+                opts = json.loads(opts) if isinstance(opts, str) else opts
+            except Exception:
+                pass
+            serialized.append({
+                "id": q.id,
+                "text": q.text,
+                "options": opts,
+                "correct_answer": q.correct_answer,
+                "points": q.points,
+                "question_type": q.question_type,
+                "created_at": q.created_at.isoformat() if q.created_at else None
+            })
+        print(f"Returning {len(serialized)} random questions")
+        return serialized
         
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Error in get_random_questions: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch questions: {str(e)}")
@@ -475,20 +537,22 @@ def create_question(
 ):
     """Create a new question"""
     try:
-        # Parse options from JSON string
         options_list = json.loads(options)
-        
-        # Validate that correct_answer is in options
         if correct_answer not in options_list:
             raise HTTPException(status_code=400, detail="Correct answer must be one of the options")
-        
+        # Determine order_index within exam if provided
+        order_index = None
+        if exam_id:
+            max_order = db.query(models.Question).filter(models.Question.exam_session_id == exam_id).with_entities(func.max(models.Question.order_index)).scalar()
+            order_index = (max_order or 0) + 1
         question = models.Question(
             text=text,
-            options=json.dumps(options_list),  # Convert list back to JSON string for storage
+            options=json.dumps(options_list),
             correct_answer=correct_answer,
-            points=points
+            points=points,
+            exam_session_id=exam_id,
+            order_index=order_index,
         )
-        
         db.add(question)
         db.commit()
         db.refresh(question)
@@ -499,30 +563,82 @@ def create_question(
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.put("/api/question/{question_id}")
+async def update_question(question_id: int, request: Request, db: Session = Depends(get_db)):
+    """Update question text/options/correct_answer/points"""
+    try:
+        body = await request.json()
+        q = db.query(models.Question).filter(models.Question.id == question_id).first()
+        if not q:
+            raise HTTPException(status_code=404, detail="Question not found")
+        if "text" in body:
+            q.text = body["text"]
+        if "options" in body:
+            if not isinstance(body["options"], list) or len(body["options"]) < 2:
+                raise HTTPException(status_code=400, detail="Options must be an array with at least 2 items")
+            q.options = json.dumps(body["options"])
+        if "correct_answer" in body:
+            opts = json.loads(q.options) if isinstance(q.options, str) else q.options
+            if body["correct_answer"] not in opts:
+                raise HTTPException(status_code=400, detail="Correct answer must be one of the options")
+            q.correct_answer = body["correct_answer"]
+        if "points" in body:
+            q.points = int(body["points"])
+        db.commit()
+        db.refresh(q)
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/exam/{exam_id}/reorder")
+async def reorder_questions(exam_id: int, request: Request, db: Session = Depends(get_db)):
+    """Reorder questions by array of question IDs in desired order"""
+    data = await request.json()
+    order = data.get("order", [])
+    if not isinstance(order, list) or not order:
+        raise HTTPException(status_code=400, detail="Order must be a non-empty array of question IDs")
+    # Validate all IDs belong to this exam
+    questions = db.query(models.Question).filter(models.Question.exam_session_id == exam_id).all()
+    qids = {q.id for q in questions}
+    if not set(order).issubset(qids):
+        raise HTTPException(status_code=400, detail="Order contains invalid question IDs for this exam")
+    try:
+        for idx, qid in enumerate(order, start=1):
+            db.query(models.Question).filter(models.Question.id == qid).update({models.Question.order_index: idx})
+        db.commit()
+        return {"success": True}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Improve /api/exam/{exam_id}/questions to return ordered list with index
 @app.get("/api/exam/{exam_id}/questions")
 def get_exam_questions(exam_id: int, db: Session = Depends(get_db)):
-    """Get all questions for a specific exam session"""
     try:
-        # Verify exam exists
         exam = db.query(models.ExamSession).filter(models.ExamSession.id == exam_id).first()
         if not exam:
             raise HTTPException(status_code=404, detail="Exam not found")
-        
-        # Get questions for this exam
-        questions = db.query(models.Question).filter(models.Question.exam_session_id == exam_id).all()
-        
-        return [
-            {
+        questions = db.query(models.Question).filter(models.Question.exam_session_id == exam_id).order_by(models.Question.order_index.asc().nulls_last(), models.Question.created_at.asc()).all()
+        result = []
+        for idx, q in enumerate(questions, start=1):
+            try:
+                options_list = json.loads(q.options) if isinstance(q.options, str) else q.options
+            except Exception:
+                options_list = q.options
+            result.append({
                 "id": q.id,
                 "text": q.text,
-                "options": q.options,
+                "options": options_list,
                 "correct_answer": q.correct_answer,
                 "points": q.points,
                 "question_type": q.question_type,
-                "created_at": q.created_at.isoformat() if q.created_at else None
-            }
-            for q in questions
-        ]
+                "created_at": q.created_at.isoformat() if q.created_at else None,
+                "order_index": q.order_index or idx
+            })
+        return result
     except HTTPException:
         raise
     except Exception as e:
@@ -546,12 +662,24 @@ async def create_exam(request: Request, db: Session = Depends(get_db)):
     try:
         data = await request.json()
         
-        # Create a new exam session with only the fields that exist in the model
+        # Parse dates if provided
+        start_date = None
+        end_date = None
+        
+        if data.get("start_date"):
+            start_date = datetime.datetime.fromisoformat(data["start_date"].replace('Z', '+00:00'))
+        
+        if data.get("end_date"):
+            end_date = datetime.datetime.fromisoformat(data["end_date"].replace('Z', '+00:00'))
+        
+        # Create a new exam session with date fields
         exam_session = models.ExamSession(
             title=data.get("title", "Untitled Exam"),
             description=data.get("description", ""),
             duration_minutes=data.get("duration", 60),
-            status="draft"  # Start as draft, can be activated later
+            status="draft",  # Start as draft, can be activated later
+            start_date=start_date,
+            end_date=end_date
         )
         
         db.add(exam_session)
@@ -562,11 +690,26 @@ async def create_exam(request: Request, db: Session = Depends(get_db)):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
+@app.post("/api/cleanup_exams")
+def cleanup_exams_manual(db: Session = Depends(get_db)):
+    """Manually trigger exam cleanup"""
+    try:
+        cleanup_invalid_exams(db)
+        return {"success": True, "message": "Exam cleanup completed"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 @app.get("/api/active_exams")
 def get_active_exams(db: Session = Depends(get_db)):
     try:
-        # Get all exam sessions
-        exams = db.query(models.ExamSession).all()
+        current_time = datetime.datetime.utcnow()
+        
+        # Get all exam sessions that are not expired
+        exams = db.query(models.ExamSession).filter(
+            (models.ExamSession.end_date.is_(None)) |  # No end date (always valid)
+            (models.ExamSession.end_date > current_time)  # End date in the future
+        ).all()
+        
         return [
             {
                 "id": exam.id,
@@ -576,12 +719,16 @@ def get_active_exams(db: Session = Depends(get_db)):
                 "question_count": db.query(models.Question).filter(
                     models.Question.exam_session_id == exam.id
                 ).count(),  # Calculate from actual questions
-                "start_date": exam.created_at.date().isoformat() if exam.created_at else None,
-                "start_time": exam.created_at.time().isoformat() if exam.created_at else None,
+                "start_date": exam.start_date.date().isoformat() if exam.start_date else None,
+                "end_date": exam.end_date.date().isoformat() if exam.end_date else None,
+                "start_time": exam.start_date.time().isoformat() if exam.start_date else None,
+                "end_time": exam.end_date.time().isoformat() if exam.end_date else None,
                 "status": exam.status,
                 "participant_count": db.query(models.ExamAttempt).filter(
                     models.ExamAttempt.exam_session_id == exam.id
-                ).count()
+                ).count(),
+                "is_valid": True,  # All exams in this list are valid
+                "days_until_expiry": (exam.end_date - current_time).days if exam.end_date else None
             }
             for exam in exams
         ]
@@ -615,12 +762,14 @@ def get_exam_details(exam_id: int, db: Session = Depends(get_db)):
             "question_count": db.query(models.Question).filter(
                 models.Question.exam_session_id == exam.id
             ).count(),
-            "start_date": exam.created_at.date().isoformat() if exam.created_at else None,
-            "start_time": exam.created_at.time().isoformat() if exam.created_at else None,
+            "start_date": exam.start_date.isoformat() if exam.start_date else None,
+            "end_date": exam.end_date.isoformat() if exam.end_date else None,
+            "created_at": exam.created_at.isoformat() if exam.created_at else None,
             "status": exam.status,
             "participant_count": participant_count,
             "violation_count": violation_count,
-            "completion_rate": completion_rate
+            "completion_rate": completion_rate,
+            "is_expired": exam.end_date < datetime.datetime.utcnow() if exam.end_date else False
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -800,48 +949,42 @@ def get_exam_analysis(attempt_id: int, db: Session = Depends(get_db)):
 
 @app.post("/api/ai_generate_questions")
 async def ai_generate_questions(request: Request):
-    """Generate questions using AI - with fallback to smart question generation"""
+    """Generate questions using AI via local Ollama when available, with fallback to smart generation."""
     data = await request.json()
-    prompt = data.get("prompt", "").lower()
-    num_questions = data.get("num_questions", 5)
-    
+    prompt = data.get("prompt", "").strip()
+    num_questions = int(data.get("num_questions", 5))
+
     if not prompt:
         return {"error": "Prompt is required."}
 
-    # First, try to use a free AI service (Hugging Face Inference API)
+    # Prefer local Ollama (open-source) if running
     try:
-        # Try Hugging Face Inference API (free tier)
-        api_url = "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium"
-        headers = {"Authorization": "Bearer hf_demo"}  # Demo token
-        
-        # Create a simple prompt for question generation
-        ai_prompt = f"Generate {num_questions} multiple choice questions about {prompt}. Format as JSON with question, options array, and correct_answer."
-        
+        base_url = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+        model = os.getenv("OLLAMA_MODEL", "llama3")
+        ai_prompt = build_ai_prompt(prompt, num_questions)
         response = requests.post(
-            api_url,
-            headers=headers,
-            json={"inputs": ai_prompt},
-            timeout=15
+            f"{base_url}/api/generate",
+            json={
+                "model": model,
+                "prompt": ai_prompt,
+                "stream": False,
+                "options": {"temperature": 0.2}
+            },
+            timeout=30,
         )
-        
-        if response.status_code == 200:
-            result = response.json()
-            # Try to parse the response
-            try:
-                # Extract questions from the response
-                questions = parse_ai_response(result, prompt, num_questions)
-                return {"questions": questions, "source": "AI Generated"}
-            except:
-                pass  # Fall back to smart generation
-                
+        if response.ok:
+            data = response.json()
+            text = data.get("response", "")
+            questions = extract_questions_from_text(text, num_questions)
+            if questions:
+                return {"questions": questions, "source": "ollama"}
     except Exception as e:
-        print(f"AI service error: {e}")
-        pass  # Fall back to smart generation
+        print(f"Ollama error: {e}")
 
     # Fallback: Smart question generation based on topic
     try:
-        questions = generate_smart_questions(prompt, num_questions)
-        return {"questions": questions, "source": "Smart Generated"}
+        questions = generate_smart_questions(prompt.lower(), num_questions)
+        return {"questions": questions, "source": "smart"}
     except Exception as e:
         return {"error": f"Error generating questions: {str(e)}"}
 
@@ -1097,36 +1240,6 @@ def add_sample_questions(db: Session):
                 "correct_answer": "Au",
                 "points": 1
             },
-            {
-                "text": "Which year did World War II end?",
-                "options": ["1943", "1944", "1945", "1946"],
-                "correct_answer": "1945",
-                "points": 1
-            },
-            {
-                "text": "What is the main component of the sun?",
-                "options": ["Liquid lava", "Molten iron", "Hot gases", "Solid rock"],
-                "correct_answer": "Hot gases",
-                "points": 1
-            },
-            {
-                "text": "Which country is home to the kangaroo?",
-                "options": ["New Zealand", "South Africa", "Australia", "India"],
-                "correct_answer": "Australia",
-                "points": 1
-            },
-            {
-                "text": "What is the largest ocean on Earth?",
-                "options": ["Atlantic Ocean", "Indian Ocean", "Arctic Ocean", "Pacific Ocean"],
-                "correct_answer": "Pacific Ocean",
-                "points": 1
-            },
-            {
-                "text": "Who painted the Mona Lisa?",
-                "options": ["Vincent van Gogh", "Pablo Picasso", "Leonardo da Vinci", "Michelangelo"],
-                "correct_answer": "Leonardo da Vinci",
-                "points": 1
-            },
             # Computer Science Questions
             {
                 "text": "What does CPU stand for?",
@@ -1157,130 +1270,6 @@ def add_sample_questions(db: Session):
                 "options": ["Long-term storage", "Temporary storage", "Processing data", "Displaying graphics"],
                 "correct_answer": "Temporary storage",
                 "points": 2
-            },
-            # Mathematics Questions
-            {
-                "text": "What is the value of π (pi) to two decimal places?",
-                "options": ["3.12", "3.14", "3.16", "3.18"],
-                "correct_answer": "3.14",
-                "points": 1
-            },
-            {
-                "text": "What is the square root of 144?",
-                "options": ["10", "11", "12", "13"],
-                "correct_answer": "12",
-                "points": 1
-            },
-            {
-                "text": "What is 15% of 200?",
-                "options": ["20", "25", "30", "35"],
-                "correct_answer": "30",
-                "points": 1
-            },
-            {
-                "text": "What is the next number in the sequence: 2, 4, 8, 16, __?",
-                "options": ["24", "32", "30", "28"],
-                "correct_answer": "32",
-                "points": 2
-            },
-            {
-                "text": "What is the area of a circle with radius 5?",
-                "options": ["25π", "50π", "75π", "100π"],
-                "correct_answer": "25π",
-                "points": 2
-            },
-            # Science Questions
-            {
-                "text": "What is the hardest natural substance on Earth?",
-                "options": ["Steel", "Diamond", "Granite", "Iron"],
-                "correct_answer": "Diamond",
-                "points": 1
-            },
-            {
-                "text": "What is the chemical formula for water?",
-                "options": ["H2O", "CO2", "O2", "N2"],
-                "correct_answer": "H2O",
-                "points": 1
-            },
-            {
-                "text": "Which gas do plants absorb from the atmosphere?",
-                "options": ["Oxygen", "Carbon dioxide", "Nitrogen", "Hydrogen"],
-                "correct_answer": "Carbon dioxide",
-                "points": 1
-            },
-            {
-                "text": "What is the speed of light in vacuum?",
-                "options": ["299,792 km/s", "199,792 km/s", "399,792 km/s", "499,792 km/s"],
-                "correct_answer": "299,792 km/s",
-                "points": 2
-            },
-            {
-                "text": "What is the atomic number of carbon?",
-                "options": ["4", "6", "8", "12"],
-                "correct_answer": "6",
-                "points": 2
-            },
-            # History Questions
-            {
-                "text": "In which year did Christopher Columbus discover America?",
-                "options": ["1490", "1492", "1495", "1500"],
-                "correct_answer": "1492",
-                "points": 1
-            },
-            {
-                "text": "Who was the first President of the United States?",
-                "options": ["Thomas Jefferson", "John Adams", "George Washington", "Benjamin Franklin"],
-                "correct_answer": "George Washington",
-                "points": 1
-            },
-            {
-                "text": "Which empire was ruled by Julius Caesar?",
-                "options": ["Greek", "Roman", "Egyptian", "Persian"],
-                "correct_answer": "Roman",
-                "points": 1
-            },
-            {
-                "text": "What was the main cause of the American Civil War?",
-                "options": ["Taxation", "Slavery", "Trade", "Territory"],
-                "correct_answer": "Slavery",
-                "points": 2
-            },
-            {
-                "text": "When did the Berlin Wall fall?",
-                "options": ["1987", "1989", "1991", "1993"],
-                "correct_answer": "1989",
-                "points": 2
-            },
-            # Geography Questions
-            {
-                "text": "What is the largest continent?",
-                "options": ["Africa", "Asia", "Europe", "North America"],
-                "correct_answer": "Asia",
-                "points": 1
-            },
-            {
-                "text": "What is the longest river in the world?",
-                "options": ["Amazon", "Nile", "Mississippi", "Yangtze"],
-                "correct_answer": "Nile",
-                "points": 1
-            },
-            {
-                "text": "Which mountain range runs through South America?",
-                "options": ["Rocky Mountains", "Andes", "Himalayas", "Alps"],
-                "correct_answer": "Andes",
-                "points": 1
-            },
-            {
-                "text": "What is the capital of Japan?",
-                "options": ["Seoul", "Beijing", "Tokyo", "Bangkok"],
-                "correct_answer": "Tokyo",
-                "points": 1
-            },
-            {
-                "text": "Which desert is the largest in the world?",
-                "options": ["Sahara", "Arabian", "Gobi", "Antarctic"],
-                "correct_answer": "Sahara",
-                "points": 1
             }
         ]
         
@@ -1301,19 +1290,223 @@ def add_sample_questions(db: Session):
         print(f"❌ Error adding sample questions: {e}")
         db.rollback()
 
+def cleanup_invalid_exams(db: Session):
+    """Automatically delete exams with invalid dates"""
+    try:
+        current_time = datetime.datetime.utcnow()
+        
+        # Find exams that have expired (end_date is in the past)
+        expired_exams = db.query(models.ExamSession).filter(
+            models.ExamSession.end_date.isnot(None),
+            models.ExamSession.end_date < current_time
+        ).all()
+        
+        deleted_count = 0
+        for exam in expired_exams:
+            # Delete associated questions first
+            questions = db.query(models.Question).filter(
+                models.Question.exam_session_id == exam.id
+            ).all()
+            for question in questions:
+                db.delete(question)
+            
+            # Delete the exam session
+            db.delete(exam)
+            deleted_count += 1
+        
+        if deleted_count > 0:
+            db.commit()
+            print(f"🗑️ Cleaned up {deleted_count} expired exams")
+        else:
+            print("✅ No expired exams found")
+            
+    except Exception as e:
+        print(f"❌ Error cleaning up invalid exams: {e}")
+        db.rollback()
+
+def create_default_trial_exam(db: Session):
+    """Create a default trial exam for new users"""
+    try:
+        # Check if trial exam already exists
+        existing_trial = db.query(models.ExamSession).filter(
+            models.ExamSession.title == "Trial Sample Exam"
+        ).first()
+        
+        if existing_trial:
+            print("✅ Default trial exam already exists")
+            return existing_trial.id
+        
+        # Create trial exam session
+        trial_exam = models.ExamSession(
+            title="Trial Sample Exam",
+            description="A sample exam to help you get familiar with the exam system. This exam includes various types of questions and demonstrates all features.",
+            duration_minutes=15,
+            status="active",
+            start_date=datetime.datetime.utcnow(),
+            end_date=datetime.datetime.utcnow() + datetime.timedelta(days=365)  # Valid for 1 year
+        )
+        
+        db.add(trial_exam)
+        db.commit()
+        db.refresh(trial_exam)
+        
+        # Add sample questions to the trial exam
+        trial_questions = [
+            {
+                "text": "Welcome to the Trial Exam! What is the capital of France?",
+                "options": ["London", "Berlin", "Paris", "Madrid"],
+                "correct_answer": "Paris",
+                "points": 1
+            },
+            {
+                "text": "Which programming language is known as the 'language of the web'?",
+                "options": ["Python", "Java", "JavaScript", "C++"],
+                "correct_answer": "JavaScript",
+                "points": 1
+            },
+            {
+                "text": "What does CPU stand for?",
+                "options": ["Central Processing Unit", "Computer Personal Unit", "Central Program Utility", "Computer Processing Unit"],
+                "correct_answer": "Central Processing Unit",
+                "points": 2
+            },
+            {
+                "text": "Which data structure operates on LIFO principle?",
+                "options": ["Queue", "Stack", "Tree", "Graph"],
+                "correct_answer": "Stack",
+                "points": 2
+            },
+            {
+                "text": "What is the largest planet in our solar system?",
+                "options": ["Earth", "Mars", "Jupiter", "Saturn"],
+                "correct_answer": "Jupiter",
+                "points": 1
+            }
+        ]
+        
+        for q_data in trial_questions:
+            question = models.Question(
+                text=q_data["text"],
+                options=json.dumps(q_data["options"]),
+                correct_answer=q_data["correct_answer"],
+                points=q_data["points"],
+                question_type="multiple_choice",
+                exam_session_id=trial_exam.id
+            )
+            db.add(question)
+        
+        db.commit()
+        print(f"✅ Created default trial exam with {len(trial_questions)} questions")
+        return trial_exam.id
+        
+    except Exception as e:
+        print(f"❌ Error creating trial exam: {e}")
+        db.rollback()
+        return None
+
 @app.on_event("startup")
 async def on_startup():
     """Initialize the application on startup"""
-    print("🚀 Starting Professional Exam System...")
+    print("Starting Professional Exam System...")
     
     # Create database tables
     models.Base.metadata.create_all(bind=engine)
     
-    # Add sample questions
+    # Initialize database
     db = SessionLocal()
     try:
+        # Run lightweight migrations
+        run_sqlite_migrations()
+
+        # Clean up invalid/expired exams
+        cleanup_invalid_exams(db)
+        
+        # Add sample questions (for general use)
         add_sample_questions(db)
+        
+        # Create default trial exam
+        trial_exam_id = create_default_trial_exam(db)
+        if trial_exam_id:
+            print(f"🎯 Default trial exam available with ID: {trial_exam_id}")
+        
     finally:
         db.close()
     
-    print("✅ Application startup complete!") 
+    print("Application startup complete!") 
+
+def build_ai_prompt(topic: str, num_questions: int) -> str:
+    """Construct a deterministic prompt asking for strict JSON output."""
+    return (
+        "You are an exam question generator. "
+        "Generate strictly JSON with no prose before or after. "
+        f"Return exactly {num_questions} items in a JSON array. Each item must be an object with keys: "
+        "question (string), options (array of exactly 4 distinct strings), correct_answer (string and must exactly match one of options). "
+        "Questions must be multiple-choice and clear for the topic: '" + topic + "'.\n\n"
+        "Output format example (do not add comments):\n"
+        "[\n"
+        "  {\n"
+        "    \"question\": \"What is X?\",\n"
+        "    \"options\": [\"A\", \"B\", \"C\", \"D\"],\n"
+        "    \"correct_answer\": \"B\"\n"
+        "  }\n"
+        "]"
+    )
+
+def extract_questions_from_text(text: str, num_questions: int):
+    """Extract and validate a JSON array of questions from model text output."""
+    if not text:
+        return None
+    try:
+        start = text.find('[')
+        end = text.rfind(']') + 1
+        if start == -1 or end <= start:
+            return None
+        json_str = text[start:end]
+        data = json.loads(json_str)
+        if not isinstance(data, list):
+            return None
+        cleaned = []
+        for item in data[:num_questions]:
+            if not isinstance(item, dict):
+                continue
+            q = item.get("question")
+            opts = item.get("options")
+            ca = item.get("correct_answer")
+            if not q or not isinstance(opts, list) or len(opts) != 4 or not ca:
+                continue
+            # Ensure strings and correct_answer matches one option
+            opts = [str(o) for o in opts]
+            if str(ca) not in opts:
+                # attempt case-insensitive match
+                lower_map = {o.lower(): o for o in opts}
+                if str(ca).lower() in lower_map:
+                    ca = lower_map[str(ca).lower()]
+                else:
+                    continue
+            cleaned.append({
+                "question": str(q),
+                "options": opts,
+                "correct_answer": str(ca),
+            })
+        return cleaned if cleaned else None
+    except Exception:
+        return None 
+
+@app.post("/api/ai_generate_questions_unique")
+async def ai_generate_questions_unique(request: Request, db: Session = Depends(get_db)):
+    payload = await request.json()
+    prompt = payload.get("prompt", "").strip()
+    num = int(payload.get("num_questions", 5))
+    exam_id = payload.get("exam_id")
+    if not prompt:
+        return {"error": "Prompt is required."}
+    existing = []
+    if exam_id:
+        qs = db.query(models.Question).filter(models.Question.exam_session_id == exam_id).all()
+        existing = [q.text for q in qs]
+    seeded_prompt = prompt
+    if existing:
+        seeded_prompt += "\nAvoid duplicating these existing questions; generate new distinct questions: " + "; ".join(existing[:20])
+    # Reuse base endpoint logic
+    request._body = json.dumps({"prompt": seeded_prompt, "num_questions": num}).encode()
+    return await ai_generate_questions(request) 

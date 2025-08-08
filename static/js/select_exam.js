@@ -7,20 +7,31 @@ document.addEventListener('DOMContentLoaded', () => {
         .then(exams => {
             examList.innerHTML = '';
             if (!exams.length) {
-                examList.innerHTML = '<li>No exams available. Please check back later.</li>';
+                examList.innerHTML = '<li class="empty">No exams available. Please check back later.</li>';
                 return;
             }
             exams.forEach(exam => {
+                const start = exam.start_time ? new Date(exam.start_time) : null;
+                const end = exam.end_time ? new Date(exam.end_time) : null;
                 const li = document.createElement('li');
+                li.className = 'exam-card';
                 li.innerHTML = `
-                    <span><b>${exam.title || 'Untitled Exam'}</b><br><small>Start: ${exam.start_time ? new Date(exam.start_time).toLocaleString() : 'N/A'}</small></span>
-                    <button class="start-exam-btn" data-exam-id="${exam.id}">Start Exam</button>
+                    <div class="exam-title">${exam.title || 'Untitled Exam'}</div>
+                    <div class="exam-meta">
+                        ${start ? `<span class="badge">Starts: ${start.toLocaleString()}</span>` : ''}
+                        ${end ? `<span class="badge">Ends: ${end.toLocaleString()}</span>` : ''}
+                        ${exam.duration_minutes ? `<span class="badge">${exam.duration_minutes} min</span>` : ''}
+                        ${exam.question_count ? `<span class="badge">${exam.question_count} Qs</span>` : ''}
+                    </div>
+                    <div class="actions">
+                        <button class="start-exam-btn" data-exam-id="${exam.id}">Start Exam</button>
+                    </div>
                 `;
                 examList.appendChild(li);
             });
         })
         .catch(() => {
-            examList.innerHTML = '<li style="color:red;">Failed to load exams.</li>';
+            examList.innerHTML = '<li class="empty">Failed to load exams.</li>';
         });
 
     // Listen for start exam button clicks

@@ -5,22 +5,37 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Interview Program - All Results</title>
     <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        :root { --border:#e2e8f0; --text:#0f172a; --muted:#475569; --surface:#fff; --bg:#f6f7fb; --primary:#2563eb; --shadow:0 8px 30px rgba(2,6,23,0.06); }
+        body { background: var(--bg); }
+        .wrap { max-width: 1000px; margin: 32px auto; padding: 0 16px; }
+        .card { background: var(--surface); border:1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); padding: 20px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 12px; border-bottom: 1px solid var(--border); }
+        th { background: #f8fafc; text-align: left; font-weight: 800; cursor: pointer; }
+        .actions { margin-top: 12px; display:flex; justify-content:flex-end; }
+        .btn-primary { background: var(--primary); color: #fff; border:none; border-radius: 10px; padding: 10px 14px; font-weight: 800; cursor:pointer; }
+    </style>
 </head>
 <body>
-    <div class="container">
-        <h1>All Exam Results</h1>
-        <table id="results-table">
-            <thead>
-                <tr>
-                    <th data-sort="score">Score</th>
-                    <th data-sort="start_time">Start Time</th>
-                    <th data-sort="average_time_per_question_seconds">Average Time Per Question</th>
-                    <th data-sort="alt_tab_count">Alt-Tab Count</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
-        <button id="host-view">Host View</button>
+    <div class="wrap">
+        <div class="card">
+            <h1 style="margin-top:0;">All Exam Results</h1>
+            <table id="results-table">
+                <thead>
+                    <tr>
+                        <th data-sort="score">Score</th>
+                        <th data-sort="start_time">Start Time</th>
+                        <th data-sort="average_time_per_question_seconds">Average Time Per Question</th>
+                        <th data-sort="alt_tab_count">Alt-Tab Count</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+            <div class="actions">
+                <button id="host-view" class="btn-primary">Host View</button>
+            </div>
+        </div>
     </div>
     <script src="/static/js/sorting.js"></script>
 </body>

@@ -2,62 +2,45 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Select Exam - Interview Program</title>
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=4">
     <style>
-        .exam-list-container {
-            max-width: 600px;
-            margin: 40px auto;
-            background: #fff;
-            border-radius: 12px;
-            box-shadow: 0 4px 24px rgba(0,0,0,0.08);
-            padding: 32px 24px;
-        }
-        .exam-list-title {
-            font-size: 2rem;
-            margin-bottom: 24px;
-            text-align: center;
-        }
-        .exam-list {
-            list-style: none;
-            padding: 0;
-        }
-        .exam-list li {
-            margin-bottom: 18px;
-            padding: 18px 16px;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: #f9f9f9;
-        }
-        .exam-list li:last-child {
-            margin-bottom: 0;
-        }
-        .start-exam-btn {
-            background: #667eea;
-            color: #fff;
-            border: none;
-            border-radius: 6px;
-            padding: 8px 18px;
-            font-size: 1rem;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-        .start-exam-btn:hover {
-            background: #5a67d8;
-        }
+        .page { min-height: 100vh; display:flex; align-items:center; justify-content:center; background: var(--bg); padding: 24px; }
+        .wrap { width:100%; max-width: 1000px; }
+        .header { display:flex; align-items:center; justify-content:space-between; margin-bottom: 16px; }
+        .header h1 { margin:0; font-size: 1.6rem; color: var(--text); }
+        .subtitle { margin:0; color: var(--muted); }
+        
+        .exam-list { list-style:none; padding:0; margin:0; display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+        .exam-card { background: var(--surface); border:1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); padding: 16px; display:flex; flex-direction:column; gap:10px; transition: transform 0.15s ease, box-shadow 0.15s ease; }
+        .exam-card:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(0,0,0,0.45); }
+        .exam-title { font-weight: 900; color: var(--text); font-size: 1.05rem; }
+        .exam-meta { display:flex; gap:10px; flex-wrap:wrap; color: var(--muted); font-size: 0.9rem; }
+        .badge { padding: 4px 10px; border-radius: 999px; border:1px solid var(--border); background:#0b1220; color: var(--muted); font-weight:800; font-size: 0.8rem; }
+        .actions { margin-top:auto; display:flex; gap:10px; }
+        .start-exam-btn { background: var(--primary); color:white; border:none; border-radius: 10px; padding: 10px 14px; font-weight:800; cursor:pointer; }
+        .start-exam-btn:hover { background: var(--primary-hover); }
+        .empty { background: #0b1220; border:1px dashed var(--border); border-radius: 12px; padding: 16px; color: var(--muted); text-align:center; }
     </style>
 </head>
 <body>
-    <div class="exam-list-container">
-        <div class="exam-list-title">Select an Exam to Attempt</div>
-        <ul class="exam-list" id="exam-list">
-            <li>Loading exams...</li>
-        </ul>
+    <div class="page">
+        <div class="wrap">
+            <div class="header">
+                <div>
+                    <h1>Select an Exam</h1>
+                    <p class="subtitle">Choose from the available exams below.</p>
+                </div>
+            </div>
+            <ul class="exam-list" id="exam-list">
+                <li class="exam-card"><span class="exam-title">Loading exams...</span></li>
+            </ul>
+        </div>
     </div>
-    <script src="/static/js/select_exam.js"></script>
+    <script src="/static/js/select_exam.js?v=4"></script>
 </body>
 </html> 

@@ -26,6 +26,7 @@ class Question(Base):
     question_type = Column(String, default="multiple_choice")
     exam_session_id = Column(Integer, ForeignKey("exam_sessions.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    order_index = Column(Integer, nullable=True)  # order within an exam
 
 class ExamSession(Base):
     __tablename__ = "exam_sessions"
@@ -35,6 +36,8 @@ class ExamSession(Base):
     description = Column(String, nullable=True)
     duration_minutes = Column(Integer, default=60)
     status = Column(String, default="draft")  # draft, active, completed, cancelled
+    start_date = Column(DateTime, nullable=True)  # When the exam becomes available
+    end_date = Column(DateTime, nullable=True)    # When the exam expires
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     
     attempts = relationship("ExamAttempt", back_populates="exam_session")
@@ -53,6 +56,11 @@ class ExamAttempt(Base):
     total_questions = Column(Integer, default=0)
     start_time = Column(DateTime, default=datetime.datetime.utcnow)
     end_time = Column(DateTime, nullable=True)
+    # Fields used throughout the app
+    alt_tab_count = Column(Integer, default=0)
+    answered_questions = Column(JSON, default=list)  # stored as JSON/TEXT in SQLite
+    duration_seconds = Column(Integer, nullable=True)
+    average_time_per_question_seconds = Column(Float, nullable=True)
     status = Column(String, default="in_progress")  # in_progress, completed, abandoned
     violations_count = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)

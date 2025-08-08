@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Any
 from datetime import datetime
 
 # User schemas
@@ -52,6 +52,8 @@ class ExamSessionBase(BaseModel):
     description: Optional[str] = None
     duration_minutes: int = 60
     status: str = "draft"
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
 
 class ExamSessionCreate(ExamSessionBase):
     pass
@@ -67,7 +69,7 @@ class ExamSession(ExamSessionBase):
 # Exam Attempt schemas
 class ExamAttemptBase(BaseModel):
     user_id: int
-    exam_session_id: int
+    exam_session_id: Optional[int] = None
     score: Optional[float] = None
     total_questions: int = 0
     status: str = "in_progress"
@@ -81,6 +83,11 @@ class ExamAttempt(ExamAttemptBase):
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     created_at: Optional[datetime] = None
+    # Extended fields used by the app
+    alt_tab_count: int = 0
+    answered_questions: Optional[Any] = None
+    duration_seconds: Optional[int] = None
+    average_time_per_question_seconds: Optional[float] = None
 
     class Config:
         from_attributes = True
