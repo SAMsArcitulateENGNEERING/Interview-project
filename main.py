@@ -321,6 +321,7 @@ def start_exam(exam: schemas.ExamAttemptCreate, db: Session = Depends(get_db)):
 def start_exam_simple(
     name: str = Form(),
     email: str = Form(),
+    phone: str = Form(default=""),
     exam_id: int = Form(...),
     db: Session = Depends(get_db)
 ):
@@ -332,12 +333,39 @@ def start_exam_simple(
         if not name or not email or not exam_id:
             raise HTTPException(status_code=400, detail="Name, email, and exam_id are required")
         
+        # Validate email format
+        import re
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, email):
+            raise HTTPException(status_code=400, detail="Invalid email format")
+        
         # Validate exam exists
         exam = db.query(models.ExamSession).filter(models.ExamSession.id == exam_id).first()
         if not exam:
             raise HTTPException(status_code=404, detail="Selected exam not found")
         
-        # Create or get user
+        # Check exam status - allow both draft and active exams
+        if exam.status not in ["active", "draft"]:
+            raise HTTPException(status_code=400, detail="This exam is not available for taking")
+        
+        # Check exam timing if start_date and end_date are set
+        now = datetime.datetime.utcnow()
+        if exam.start_date and now < exam.start_date:
+            time_diff = exam.start_date - now
+            hours = int(time_diff.total_seconds() // 3600)
+            minutes = int((time_diff.total_seconds() % 3600) // 60)
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Exam has not started yet. Please wait {hours}h {minutes}m until {exam.start_date.strftime('%Y-%m-%d %H:%M UTC')}"
+            )
+        
+        if exam.end_date and now > exam.end_date:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Exam has ended on {exam.end_date.strftime('%Y-%m-%d %H:%M UTC')}"
+            )
+        
+        # Create or get user (check for existing email)
         user = db.query(models.User).filter(models.User.email == email).first()
         if not user:
             print(f"Creating new user: {name}")
@@ -353,6 +381,27 @@ def start_exam_simple(
             print(f"User created with ID: {user.id}")
         else:
             print(f"Using existing user: {user.id}")
+            # Update user name if it changed
+            if user.name != name:
+                user.name = name
+                db.commit()
+        
+        # Check if user already has an active attempt for this exam
+        existing_attempt = db.query(models.ExamAttempt).filter(
+            models.ExamAttempt.user_id == user.id,
+            models.ExamAttempt.exam_session_id == exam_id,
+            models.ExamAttempt.end_time.is_(None)
+        ).first()
+        
+        if existing_attempt:
+            # Return existing attempt if it's still active
+            return {
+                "success": True,
+                "exam_attempt_id": existing_attempt.id,
+                "user_id": user.id,
+                "user_name": user.name,
+                "message": "Resuming existing exam attempt"
+            }
         
         # Create exam attempt, associate with exam
         exam_attempt = models.ExamAttempt(
@@ -379,6 +428,8 @@ def start_exam_simple(
             "user_id": user.id,
             "user_name": user.name
         }
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Error in start_exam_simple: {str(e)}")
         db.rollback()
@@ -518,6 +569,16 @@ def get_user(user_id: int, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user
+
+@app.get("/api/check_email/{email}")
+def check_email_exists(email: str, db: Session = Depends(get_db)):
+    """Check if an email already exists in the system"""
+    user = db.query(models.User).filter(models.User.email == email).first()
+    return {
+        "exists": user is not None,
+        "user_id": user.id if user else None,
+        "user_name": user.name if user else None
+    }
 
 @app.get("/get_question/{question_id}", response_model=schemas.Question)
 def get_question(question_id: int, db: Session = Depends(get_db)):
@@ -774,6 +835,41 @@ def get_exam_details(exam_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.put("/api/exam/{exam_id}")
+async def update_exam(exam_id: int, request: Request, db: Session = Depends(get_db)):
+    """Update exam details"""
+    try:
+        exam = db.query(models.ExamSession).filter(models.ExamSession.id == exam_id).first()
+        if not exam:
+            raise HTTPException(status_code=404, detail="Exam not found")
+        
+        data = await request.json()
+        
+        # Update allowed fields
+        if "title" in data:
+            exam.title = data["title"]
+        if "description" in data:
+            exam.description = data["description"]
+        if "duration_minutes" in data:
+            exam.duration_minutes = data["duration_minutes"]
+        if "status" in data:
+            exam.status = data["status"]
+        if "start_date" in data and data["start_date"]:
+            exam.start_date = datetime.datetime.fromisoformat(data["start_date"].replace('Z', '+00:00'))
+        if "end_date" in data and data["end_date"]:
+            exam.end_date = datetime.datetime.fromisoformat(data["end_date"].replace('Z', '+00:00'))
+        
+        db.commit()
+        db.refresh(exam)
+        
+        return {"success": True, "message": "Exam updated successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error updating exam: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to update exam")
+
 @app.post("/api/exam/{exam_id}/start")
 def start_exam_session(exam_id: int, db: Session = Depends(get_db)):
     try:
@@ -816,6 +912,133 @@ def delete_exam(exam_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to delete exam: {str(e)}")
+
+@app.get("/api/exam/{exam_id}/participants")
+def get_exam_participants(exam_id: int, db: Session = Depends(get_db)):
+    """Get all participants for a specific exam"""
+    try:
+        attempts = db.query(models.ExamAttempt).filter(
+            models.ExamAttempt.exam_session_id == exam_id
+        ).all()
+        
+        participants = []
+        for attempt in attempts:
+            user = db.query(models.User).filter(models.User.id == attempt.user_id).first()
+            if user:
+                status = "completed" if attempt.end_time else "active"
+                participants.append({
+                    "id": user.id,
+                    "name": user.name,
+                    "email": user.email,
+                    "status": status,
+                    "start_time": attempt.start_time.isoformat() if attempt.start_time else None,
+                    "end_time": attempt.end_time.isoformat() if attempt.end_time else None,
+                    "score": attempt.score,
+                    "alt_tab_count": attempt.alt_tab_count
+                })
+        
+        return participants
+    except Exception as e:
+        return []
+
+@app.get("/api/exam/{exam_id}/violations")
+def get_exam_violations(exam_id: int, db: Session = Depends(get_db)):
+    """Get all violations for a specific exam"""
+    try:
+        attempts = db.query(models.ExamAttempt).filter(
+            models.ExamAttempt.exam_session_id == exam_id,
+            models.ExamAttempt.alt_tab_count > 0
+        ).all()
+        
+        violations = []
+        for attempt in attempts:
+            user = db.query(models.User).filter(models.User.id == attempt.user_id).first()
+            if user and attempt.alt_tab_count > 0:
+                violations.append({
+                    "participant_name": user.name,
+                    "participant_email": user.email,
+                    "count": attempt.alt_tab_count,
+                    "timestamp": attempt.start_time.isoformat() if attempt.start_time else None,
+                    "attempt_id": attempt.id
+                })
+        
+        return violations
+    except Exception as e:
+        return []
+
+@app.get("/api/exam/{exam_id}/activity")
+def get_exam_activity(exam_id: int, db: Session = Depends(get_db)):
+    """Get recent activity for a specific exam"""
+    try:
+        attempts = db.query(models.ExamAttempt).filter(
+            models.ExamAttempt.exam_session_id == exam_id
+        ).order_by(models.ExamAttempt.start_time.desc()).limit(20).all()
+        
+        activities = []
+        for attempt in attempts:
+            user = db.query(models.User).filter(models.User.id == attempt.user_id).first()
+            if user:
+                # Start activity
+                activities.append({
+                    "type": "start",
+                    "description": f"{user.name} started the exam",
+                    "timestamp": attempt.start_time.isoformat() if attempt.start_time else None
+                })
+                
+                # Violation activity
+                if attempt.alt_tab_count > 0:
+                    activities.append({
+                        "type": "violation",
+                        "description": f"{user.name} had {attempt.alt_tab_count} Alt+Tab violations",
+                        "timestamp": attempt.start_time.isoformat() if attempt.start_time else None
+                    })
+                
+                # Completion activity
+                if attempt.end_time:
+                    activities.append({
+                        "type": "complete",
+                        "description": f"{user.name} completed the exam with score {attempt.score}",
+                        "timestamp": attempt.end_time.isoformat() if attempt.end_time else None
+                    })
+        
+        # Sort by timestamp (newest first)
+        activities.sort(key=lambda x: x["timestamp"] or "", reverse=True)
+        return activities[:20]  # Return last 20 activities
+    except Exception as e:
+        return []
+
+@app.get("/api/exam/{exam_id}/stats")
+def get_exam_stats(exam_id: int, db: Session = Depends(get_db)):
+    """Get real-time statistics for a specific exam"""
+    try:
+        attempts = db.query(models.ExamAttempt).filter(
+            models.ExamAttempt.exam_session_id == exam_id
+        ).all()
+        
+        total_participants = len(attempts)
+        active_participants = sum(1 for attempt in attempts if not attempt.end_time)
+        total_violations = sum(attempt.alt_tab_count for attempt in attempts)
+        completed_attempts = sum(1 for attempt in attempts if attempt.end_time)
+        
+        completion_rate = 0
+        if total_participants > 0:
+            completion_rate = int((completed_attempts / total_participants) * 100)
+        
+        return {
+            "total_participants": total_participants,
+            "active_participants": active_participants,
+            "total_violations": total_violations,
+            "completion_rate": completion_rate,
+            "completed_attempts": completed_attempts
+        }
+    except Exception as e:
+        return {
+            "total_participants": 0,
+            "active_participants": 0,
+            "total_violations": 0,
+            "completion_rate": 0,
+            "completed_attempts": 0
+        }
 
 @app.get("/api/stats")
 def get_dashboard_stats(db: Session = Depends(get_db)):
@@ -1494,19 +1717,219 @@ def extract_questions_from_text(text: str, num_questions: int):
 
 @app.post("/api/ai_generate_questions_unique")
 async def ai_generate_questions_unique(request: Request, db: Session = Depends(get_db)):
-    payload = await request.json()
-    prompt = payload.get("prompt", "").strip()
-    num = int(payload.get("num_questions", 5))
-    exam_id = payload.get("exam_id")
+    """Generate unique questions using AI with better prompt engineering and duplicate prevention"""
+    data = await request.json()
+    prompt = data.get("prompt", "").lower()
+    num_questions = data.get("num_questions", 5)
+    exam_id = data.get("exam_id")
+    
     if not prompt:
         return {"error": "Prompt is required."}
-    existing = []
+
+    # Check if exam exists and get existing questions to avoid duplicates
+    existing_questions = []
     if exam_id:
-        qs = db.query(models.Question).filter(models.Question.exam_session_id == exam_id).all()
-        existing = [q.text for q in qs]
-    seeded_prompt = prompt
-    if existing:
-        seeded_prompt += "\nAvoid duplicating these existing questions; generate new distinct questions: " + "; ".join(existing[:20])
-    # Reuse base endpoint logic
-    request._body = json.dumps({"prompt": seeded_prompt, "num_questions": num}).encode()
-    return await ai_generate_questions(request) 
+        exam = db.query(models.ExamSession).filter(models.ExamSession.id == exam_id).first()
+        if exam:
+            existing_questions = db.query(models.Question).filter(
+                models.Question.exam_session_id == exam_id
+            ).all()
+    
+    # Build a more specific prompt with context
+    ai_prompt = build_ai_prompt(prompt, num_questions)
+    
+    # Add existing questions to avoid duplicates
+    if existing_questions:
+        existing_texts = [q.text for q in existing_questions[:10]]  # Limit to avoid too long prompt
+        ai_prompt += f"\n\nIMPORTANT: Avoid generating questions similar to these existing ones:\n"
+        ai_prompt += "\n".join([f"- {text}" for text in existing_texts])
+    
+    try:
+        # Try multiple AI services for better reliability
+        questions = None
+        
+        # Service 1: Hugging Face Inference API with DialoGPT-large
+        try:
+            api_url = "https://api-inference.huggingface.co/models/microsoft/DialoGPT-large"
+            headers = {"Authorization": "Bearer hf_demo"}
+            
+            response = requests.post(
+                api_url,
+                headers=headers,
+                json={
+                    "inputs": ai_prompt,
+                    "parameters": {
+                        "max_length": 500,
+                        "temperature": 0.7,
+                        "do_sample": True,
+                        "num_return_sequences": 1
+                    }
+                },
+                timeout=15
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                if isinstance(result, list) and len(result) > 0:
+                    generated_text = result[0].get('generated_text', '')
+                    questions = extract_questions_from_text(generated_text, num_questions)
+        except Exception as e:
+            print(f"DialoGPT API error: {e}")
+        
+        # Service 2: Try GPT2 if first one fails
+        if not questions:
+            try:
+                api_url = "https://api-inference.huggingface.co/models/gpt2"
+                headers = {"Authorization": "Bearer hf_demo"}
+                
+                response = requests.post(
+                    api_url,
+                    headers=headers,
+                    json={
+                        "inputs": f"Generate {num_questions} multiple choice questions about {prompt}:",
+                        "parameters": {
+                            "max_length": 300,
+                            "temperature": 0.8,
+                            "do_sample": True
+                        }
+                    },
+                    timeout=15
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    if isinstance(result, list) and len(result) > 0:
+                        generated_text = result[0].get('generated_text', '')
+                        questions = extract_questions_from_text(generated_text, num_questions)
+            except Exception as e:
+                print(f"GPT2 API error: {e}")
+        
+        # If AI generation worked, filter out duplicates and create questions
+        if questions:
+            # Remove duplicates based on question text similarity
+            unique_questions = []
+            existing_texts = [q.text.lower() for q in existing_questions]
+            
+            for question in questions:
+                question_text_lower = question.get("question", "").lower()
+                is_duplicate = False
+                
+                # Check against existing questions
+                for existing_text in existing_texts:
+                    if question_text_lower in existing_text or existing_text in question_text_lower:
+                        is_duplicate = True
+                        break
+                
+                # Check against already added questions
+                for added_question in unique_questions:
+                    if question_text_lower in added_question.get("question", "").lower():
+                        is_duplicate = True
+                        break
+                
+                if not is_duplicate:
+                    unique_questions.append(question)
+                
+                if len(unique_questions) >= num_questions:
+                    break
+            
+            if unique_questions:
+                # Create questions in database
+                success_count = 0
+                for question_data in unique_questions[:num_questions]:
+                    try:
+                        question = models.Question(
+                            text=question_data['question'],
+                            options=json.dumps(question_data['options']),
+                            correct_answer=question_data['correct_answer'],
+                            points=question_data.get('points', 1),
+                            exam_session_id=exam_id
+                        )
+                        db.add(question)
+                        success_count += 1
+                    except Exception as e:
+                        print(f"Error creating question: {e}")
+                        continue
+                
+                db.commit()
+                return {
+                    "success": True,
+                    "message": f"Generated {success_count} unique questions",
+                    "source": "AI Generated"
+                }
+        
+        # Fallback to smart generation with topic-specific questions
+        questions = generate_smart_questions(prompt, num_questions)
+        
+        # Filter out duplicates from smart generation too
+        unique_questions = []
+        existing_texts = [q.text.lower() for q in existing_questions]
+        
+        for question in questions:
+            question_text_lower = question.get("question", "").lower()
+            is_duplicate = False
+            
+            for existing_text in existing_texts:
+                if question_text_lower in existing_text or existing_text in question_text_lower:
+                    is_duplicate = True
+                    break
+            
+            if not is_duplicate:
+                unique_questions.append(question)
+            
+            if len(unique_questions) >= num_questions:
+                break
+        
+        # Create smart questions in database
+        success_count = 0
+        for question_data in unique_questions[:num_questions]:
+            try:
+                question = models.Question(
+                    text=question_data['question'],
+                    options=json.dumps(question_data['options']),
+                    correct_answer=question_data['correct_answer'],
+                    points=question_data.get('points', 1),
+                    exam_session_id=exam_id
+                )
+                db.add(question)
+                success_count += 1
+            except Exception as e:
+                print(f"Error creating smart question: {e}")
+                continue
+        
+        db.commit()
+        return {
+            "success": True,
+            "message": f"Generated {success_count} unique questions",
+            "source": "Smart Generated"
+        }
+        
+    except Exception as e:
+        print(f"AI generation error: {e}")
+        # Final fallback to smart generation
+        try:
+            questions = generate_smart_questions(prompt, num_questions)
+            success_count = 0
+            for question_data in questions[:num_questions]:
+                try:
+                    question = models.Question(
+                        text=question_data['question'],
+                        options=json.dumps(question_data['options']),
+                        correct_answer=question_data['correct_answer'],
+                        points=question_data.get('points', 1),
+                        exam_session_id=exam_id
+                    )
+                    db.add(question)
+                    success_count += 1
+                except Exception as e:
+                    print(f"Error creating fallback question: {e}")
+                    continue
+            
+            db.commit()
+            return {
+                "success": True,
+                "message": f"Generated {success_count} questions using fallback",
+                "source": "Smart Generated"
+            }
+        except Exception as e2:
+            print(f"Fallback generation error: {e2}")
+            return {"success": False, "error": "Failed to generate questions"} 

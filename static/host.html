@@ -1,243 +1,158 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-    <meta http-equiv="Pragma" content="no-cache" />
-    <meta http-equiv="Expires" content="0" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Exam Host Dashboard</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=3">
-    <link rel="stylesheet" href="/static/css/host.css?v=4">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Host | MCQ Builder</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=3" />
+  <link rel="stylesheet" href="/static/css/forms.css?v=2" />
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet" />
+  <style>body{align-items:flex-start}</style>
 </head>
-<body>
-    <div class="host-container">
-        <!-- Header -->
-        <header class="host-header">
-            <h1><i class="fas fa-chalkboard-teacher"></i> Exam Host Dashboard</h1>
-            <div class="host-status">
-                <span id="connection-status" class="status-indicator">
-                    <i class="fas fa-circle"></i> Connected
-                </span>
+<body class="forms-host">
+  <div class="forms-shell">
+    <header class="forms-header">
+      <h1><i class="fas fa-chalkboard"></i> MCQ Builder</h1>
+      <div class="actions">
+        <button id="btn-save" class="btn"><i class="fas fa-save"></i> Save</button>
+      </div>
+    </header>
+
+    <main class="forms-main">
+      <section class="card">
+        <div class="row">
+          <div class="col" style="max-width:760px">
+            <label>Quiz title</label>
+            <input id="quiz-title" type="text" placeholder="Untitled quiz" />
+          </div>
+        </div>
+        <div class="row">
+          <div class="col" style="max-width:760px">
+            <label>Description</label>
+            <textarea id="quiz-desc" placeholder="Optional description"></textarea>
+          </div>
+        </div>
+        <div class="row" style="gap:60px">
+          <div class="col" style="width:240px">
+            <label>Duration (minutes)</label>
+            <input id="quiz-duration" type="number" value="60" min="5" max="480" />
+          </div>
+          <div class="col" style="width:320px">
+            <label>Start (optional)</label>
+            <input id="quiz-start" type="datetime-local" />
+          </div>
+        </div>
+        <div class="row" style="gap:60px; margin-top:40px">
+          <div class="col" style="width:340px">
+            <label>Load existing</label>
+            <select id="existing-exams" class="select"></select>
+          </div>
+        </div>
+        <div class="row actions-row">
+          <button id="btn-new" class="btn"><i class="fas fa-plus"></i> New quiz</button>
+          <button id="btn-activate-exam" class="btn btn-secondary" style="display:none;"><i class="fas fa-play"></i> Activate Quiz</button>
+          <button id="btn-delete-exam" class="btn btn-danger" style="display:none;"><i class="fas fa-trash"></i> Delete Quiz</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="qb-top">
+          <h2>Questions</h2>
+          <button id="btn-add-q" class="btn"><i class="fas fa-plus"></i> Add question</button>
+        </div>
+        <div id="questions-list" class="q-list"></div>
+      </section>
+
+      <section class="card activity-section">
+        <div class="activity-header">
+          <h2><i class="fas fa-chart-line"></i> Live Activity</h2>
+          <div class="activity-stats">
+            <div class="stat-item">
+              <span class="stat-label">Active Participants</span>
+              <span class="stat-value" id="active-participants">0</span>
             </div>
-        </header>
-
-        <!-- Main Content -->
-        <div class="host-content">
-            <!-- Left Panel - Exam Management -->
-            <div class="left-panel">
-                <div class="panel-section">
-                    <h2><i class="fas fa-plus-circle"></i> Create New Exam</h2>
-                    <form id="exam-form" class="exam-form">
-                        <div class="form-group">
-                            <label for="exam-title">Exam Title</label>
-                            <input type="text" id="exam-title" required placeholder="Enter exam title">
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="exam-description">Description</label>
-                            <textarea id="exam-description" placeholder="Enter exam description"></textarea>
-                        </div>
-                        
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="exam-duration">Duration (minutes)</label>
-                                <input type="number" id="exam-duration" min="5" max="480" value="60" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="question-count">Questions Count</label>
-                                <input type="number" id="question-count" min="1" max="50" value="10" required>
-                            </div>
-                        </div>
-                        
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="start-date">Start Date</label>
-                                <input type="date" id="start-date" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="start-time">Start Time</label>
-                                <input type="time" id="start-time" required>
-                            </div>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="exam-password">Exam Password (Optional)</label>
-                            <input type="text" id="exam-password" placeholder="Leave empty for no password">
-                        </div>
-                        
-                        <div class="form-group">
-                            <label>
-                                <input type="checkbox" id="enable-monitoring" checked>
-                                Enable Alt-Tab Monitoring
-                            </label>
-                        </div>
-                        
-                        <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-save"></i> Create Exam
-                        </button>
-                        <button type="button" id="show-questions-btn" class="btn btn-secondary" onclick="hostDashboard.showQuestionsSection()">
-                            <i class="fas fa-question-circle"></i> Create Questions
-                        </button>
-                    </form>
-                </div>
-
-                <!-- Create Questions Section -->
-                <div class="panel-section" id="questions-section" style="display: none;">
-                    <h2><i class="fas fa-question-circle"></i> Create Questions</h2>
-                    <div class="question-creator">
-                        <div class="form-group">
-                            <label for="selected-exam">Select Exam</label>
-                            <select id="selected-exam" class="form-control">
-                                <option value="">Choose an exam...</option>
-                            </select>
-                        </div>
-                        <!-- AI Assistant Button -->
-                        <div class="form-group">
-                            <button type="button" id="ai-assistant-btn" class="btn btn-info">
-                                <i class="fas fa-robot"></i> AI Assistant
-                            </button>
-                        </div>
-                        <form id="question-form" class="question-form">
-                            <div class="form-group">
-                                <label for="question-text">Question Text</label>
-                                <textarea id="question-text" required placeholder="Enter your question here..."></textarea>
-                            </div>
-                            
-                            <div class="form-group">
-                                <label>Options</label>
-                                <div id="options-container">
-                                    <div class="option-row">
-                                        <input type="radio" name="correct-answer" value="0" required>
-                                        <input type="text" class="option-text" placeholder="Option A" required>
-                                    </div>
-                                    <div class="option-row">
-                                        <input type="radio" name="correct-answer" value="1" required>
-                                        <input type="text" class="option-text" placeholder="Option B" required>
-                                    </div>
-                                    <div class="option-row">
-                                        <input type="radio" name="correct-answer" value="2" required>
-                                        <input type="text" class="option-text" placeholder="Option C" required>
-                                    </div>
-                                    <div class="option-row">
-                                        <input type="radio" name="correct-answer" value="3" required>
-                                        <input type="text" class="option-text" placeholder="Option D" required>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div class="form-group">
-                                <label for="question-points">Points</label>
-                                <input type="number" id="question-points" min="1" max="10" value="1" required>
-                            </div>
-                            
-                            <div class="form-actions">
-                                <button type="submit" class="btn btn-success">
-                                    <i class="fas fa-plus"></i> Add Question
-                                </button>
-                                <button type="button" id="add-option" class="btn btn-secondary">
-                                    <i class="fas fa-plus"></i> Add Option
-                                </button>
-                            </div>
-                        </form>
-                        
-                        <div class="questions-list">
-                            <h3>Questions in this Exam</h3>
-                            <div id="questions-list" class="questions-container">
-                                <!-- Questions will be listed here -->
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Active Exams -->
-                <div class="panel-section">
-                    <h2><i class="fas fa-play-circle"></i> Active Exams</h2>
-                    <div id="active-exams" class="exam-list">
-                        <!-- Active exams will be loaded here -->
-                    </div>
-                </div>
+            <div class="stat-item">
+              <span class="stat-label">Total Violations</span>
+              <span class="stat-value" id="total-violations">0</span>
             </div>
-
-            <!-- Right Panel - Real-time Monitoring -->
-            <div class="right-panel">
-                <div class="panel-section">
-                    <h2><i class="fas fa-eye"></i> Live Monitoring</h2>
-                    <div class="monitoring-stats">
-                        <div class="stat-card">
-                            <div class="stat-number" id="total-participants">0</div>
-                            <div class="stat-label">Total Participants</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-number" id="active-participants">0</div>
-                            <div class="stat-label">Active Now</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-number" id="total-violations">0</div>
-                            <div class="stat-label">Violations</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Live Participants -->
-                <div class="panel-section">
-                    <h2><i class="fas fa-users"></i> Live Participants</h2>
-                    <div id="participants-list" class="participants-list">
-                        <!-- Live participants will be shown here -->
-                    </div>
-                </div>
-
-                <!-- Recent Violations -->
-                <div class="panel-section">
-                    <h2><i class="fas fa-exclamation-triangle"></i> Recent Violations</h2>
-                    <div id="violations-list" class="violations-list">
-                        <!-- Recent violations will be shown here -->
-                    </div>
-                </div>
+            <div class="stat-item">
+              <span class="stat-label">Completion Rate</span>
+              <span class="stat-value" id="completion-rate">0%</span>
             </div>
+          </div>
+        </div>
+        
+        <div class="activity-tabs">
+          <button class="tab-btn active" data-tab="participants">
+            <i class="fas fa-users"></i> Participants
+          </button>
+          <button class="tab-btn" data-tab="violations">
+            <i class="fas fa-exclamation-triangle"></i> Violations
+          </button>
+          <button class="tab-btn" data-tab="recent">
+            <i class="fas fa-clock"></i> Recent Activity
+          </button>
         </div>
 
-        <!-- Bottom Panel - Exam History -->
-        <div class="bottom-panel">
-            <div class="panel-section">
-                <h2><i class="fas fa-history"></i> Exam History</h2>
-                <div id="exam-history" class="exam-history">
-                    <!-- Exam history will be loaded here -->
-                </div>
+        <div class="tab-content">
+          <div id="participants-tab" class="tab-pane active">
+            <div class="participants-list" id="participants-list">
+              <div class="empty-state">
+                <i class="fas fa-users"></i>
+                <p>No participants yet</p>
+              </div>
             </div>
-        </div>
-    </div>
+          </div>
 
-    <!-- Modals -->
-    <div id="exam-details-modal" class="modal">
-        <div class="modal-content">
-            <span class="close">&times;</span>
-            <h2>Exam Details</h2>
-            <div id="exam-details-content"></div>
-        </div>
-    </div>
+          <div id="violations-tab" class="tab-pane">
+            <div class="violations-list" id="violations-list">
+              <div class="empty-state">
+                <i class="fas fa-shield-alt"></i>
+                <p>No violations detected</p>
+              </div>
+            </div>
+          </div>
 
-    <!-- AI Assistant Modal -->
-    <div id="ai-assistant-modal" class="modal" style="display:none;">
-      <div class="modal-content">
-        <span class="close" id="close-ai-modal">&times;</span>
-        <h2><i class="fas fa-robot"></i> AI Question Generator</h2>
-        <div class="form-group">
-          <label for="ai-prompt">Describe a topic or paste study material:</label>
-          <textarea id="ai-prompt" rows="4" placeholder="e.g. Photosynthesis, Python basics, etc."></textarea>
+          <div id="recent-tab" class="tab-pane">
+            <div class="recent-activity" id="recent-activity">
+              <div class="empty-state">
+                <i class="fas fa-history"></i>
+                <p>No recent activity</p>
+              </div>
+            </div>
+          </div>
         </div>
-        <div class="form-group">
-          <label for="ai-num-questions">Number of questions:</label>
-          <input type="number" id="ai-num-questions" min="1" max="10" value="3">
+      </section>
+    </main>
+  </div>
+
+  <template id="tmpl-question">
+    <div class="q-item">
+              <div class="q-head">
+          <div class="q-index">#1</div>
+          <input class="q-text" placeholder="Question" />
+          <div class="q-actions">
+            <button class="icon delete" title="Delete"><i class="fas fa-trash"></i></button>
+          </div>
         </div>
-        <button id="ai-generate-btn" class="btn btn-primary"><i class="fas fa-magic"></i> Generate</button>
-        <div id="ai-loading" style="display:none; margin-top:10px;">Generating questions... <i class="fas fa-spinner fa-spin"></i></div>
-        <div id="ai-error" style="color:red; margin-top:10px;"></div>
-        <div id="ai-questions-preview" style="margin-top:20px;"></div>
+      <div class="options"></div>
+      <div class="q-foot">
+        <button class="btn add-opt"><i class="fas fa-plus"></i> Add option</button>
+        <div class="points">
+          <label>Points</label>
+          <input class="q-points" type="number" value="1" min="1" max="10" />
+        </div>
       </div>
     </div>
+  </template>
 
-    <script src="/static/js/host.js?v=5"></script>
+  <template id="tmpl-option">
+    <label class="option">
+      <input type="radio" class="opt-correct" name="correct" />
+      <input type="text" class="opt-text" placeholder="Option" />
+    </label>
+  </template>
+
+  <script src="/static/js/host_forms.js?v=2"></script>
 </body>
-</html> 
+</html>

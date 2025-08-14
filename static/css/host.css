@@ -110,6 +110,23 @@
 
 .questions-list { margin-top: 1.25rem; }
 .questions-list h3 { color: var(--text); margin-bottom: 0.8rem; font-size: 1.05rem; border-bottom: 2px solid var(--primary); padding-bottom: 0.4rem; }
+
+/* Bulk Questions Section */
+.bulk-questions-section { margin-top: 1.5rem; padding: 1.25rem; background: #0b1220; border-radius: 10px; border: 1px solid var(--border); }
+.bulk-questions-section h3 { color: var(--text); margin-bottom: 0.8rem; font-size: 1.05rem; display: flex; align-items: center; gap: 0.5rem; }
+.bulk-questions-section h3 i { color: var(--primary); }
+.help-text { 
+    background: rgba(37,99,235,0.12); 
+    border: 1px solid rgba(37,99,235,0.35); 
+    border-radius: 6px; 
+    padding: 8px 12px; 
+    margin: 8px 0; 
+    font-size: 13px; 
+    color: #bfdbfe; 
+    font-weight: 600;
+}
+.format-example { background: #1f2937; border-radius: 6px; padding: 0.8rem; margin-bottom: 1rem; }
+.format-example pre { color: var(--text); font-size: 0.85rem; margin: 0; white-space: pre-wrap; }
 .questions-container { display:flex; flex-direction:column; gap: 0.8rem; max-height: 400px; overflow-y:auto; }
 .question-item { background: var(--surface); border:1px solid var(--border); border-radius: 10px; padding: 1rem; box-shadow: 0 2px 6px rgba(0,0,0,0.25); }
 .question-item .question-header { display:flex; justify-content:space-between; align-items:center; margin-bottom: 0.6rem; }
@@ -122,6 +139,28 @@
 .question-item .option-item .option-label { font-weight: 800; color: var(--primary); min-width: 20px; }
 .question-item .question-actions { display:flex; gap: 0.5rem; margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px solid var(--border); }
 .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.8rem; border-radius: 6px; }
+
+/* Arrow button styles */
+.btn-info { background: #0891b2; color: white; }
+.btn-info:hover { background: #0e7490; transform: translateY(-1px); box-shadow: 0 2px 8px rgba(8, 145, 178, 0.3); }
+.btn-info:active { transform: translateY(0); }
+
+/* Make arrow buttons more prominent */
+.question-actions .btn-info { 
+    min-width: 32px; 
+    height: 32px; 
+    padding: 0; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.question-actions .btn-info i { 
+    font-size: 0.9rem; 
+    font-weight: bold; 
+}
 
 /* History */
 .exam-history-header { display:flex; justify-content:space-between; align-items:center; margin-bottom: 16px; padding: 12px; background: #0b1220; border-radius: 10px; }

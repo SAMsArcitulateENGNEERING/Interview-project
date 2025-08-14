@@ -38,6 +38,12 @@ class HostDashboard {
             this.createQuestion();
         });
 
+        // Bulk question creation
+        document.getElementById('bulk-create-btn').addEventListener('click', (e) => {
+            e.preventDefault();
+            this.createBulkQuestions();
+        });
+
         // Add option button
         document.getElementById('add-option').addEventListener('click', () => {
             this.addOption();
@@ -135,81 +141,135 @@ class HostDashboard {
     }
 
     async createQuestion() {
-        const questionText = document.getElementById('question-text').value.trim();
-        const points = parseInt(document.getElementById('question-points').value);
-        const examId = document.getElementById('selected-exam').value;
-        
-        if (!examId) {
-            this.showMessage('Please select an exam before creating questions', 'error');
+        const formData = new FormData();
+        formData.append('text', document.getElementById('question-text').value);
+        formData.append('correct_answer', document.querySelector('input[name="correct-answer"]:checked')?.value || '');
+        formData.append('points', document.getElementById('question-points').value || '1');
+        formData.append('exam_id', this.currentExamId);
+
+        const options = [];
+        document.querySelectorAll('.option-text').forEach(input => {
+            if (input.value.trim()) {
+                options.push(input.value.trim());
+            }
+        });
+        formData.append('options', JSON.stringify(options));
+
+        if (!formData.get('text') || !formData.get('correct_answer') || options.length < 2) {
+            this.showMessage('Please fill in all required fields and add at least 2 options.', 'error');
             return;
         }
-        if (!questionText) {
-            this.showMessage('Please enter the question text', 'error');
-            return;
-        }
-        
-        // Get options in original order; require all to be filled to keep indices stable
-        const optionInputs = Array.from(document.querySelectorAll('.option-text'));
-        const options = optionInputs.map(input => input.value.trim());
-        if (options.some(v => v === '')) {
-            this.showMessage('Please fill all option fields (A, B, C, D)', 'error');
-            return;
-        }
-        if (options.length < 2) {
-            this.showMessage('Please provide at least 2 options', 'error');
-            return;
-        }
-        
-        // Get correct answer
-        const correctAnswerRadio = document.querySelector('input[name="correct-answer"]:checked');
-        if (!correctAnswerRadio) {
-            this.showMessage('Please select a correct answer', 'error');
-            return;
-        }
-        const correctAnswerIndex = parseInt(correctAnswerRadio.value);
-        if (isNaN(correctAnswerIndex) || correctAnswerIndex < 0 || correctAnswerIndex >= options.length) {
-            this.showMessage('Please select a valid correct answer', 'error');
-            return;
-        }
-        const correctAnswer = options[correctAnswerIndex];
 
         try {
-            const formData = new FormData();
-            formData.append('text', questionText);
-            formData.append('options', JSON.stringify(options));
-            formData.append('correct_answer', correctAnswer);
-            formData.append('points', points);
-            formData.append('exam_id', examId);
-
             const response = await fetch('/api/create_question', {
                 method: 'POST',
                 body: formData
             });
 
-            const result = await response.json();
-
             if (response.ok) {
                 this.showMessage('Question created successfully!', 'success');
                 document.getElementById('question-form').reset();
                 this.resetOptions();
-                // Append locally using server order_index if provided
-                this.questionsCache = this.questionsCache || [];
-                this.questionsCache.push({
-                    id: result.id,
-                    text: questionText,
-                    options: options,
-                    correct_answer: correctAnswer,
-                    points: points,
-                    order_index: result.order_index || (this.questionsCache.length + 1)
-                });
-                this.renderQuestions(this.questionsCache);
+                this.loadExamQuestions(this.currentExamId);
             } else {
-                this.showMessage(result.detail || 'Failed to create question', 'error');
+                const error = await response.json();
+                this.showMessage(`Error: ${error.detail}`, 'error');
             }
         } catch (error) {
-            this.showMessage('Error creating question: ' + error.message, 'error');
+            this.showMessage(`Error: ${error.message}`, 'error');
         }
     }
+
+    // Add bulk question creation method
+    async createBulkQuestions() {
+        const bulkText = document.getElementById('bulk-questions-text').value.trim();
+        if (!bulkText) {
+            this.showMessage('Please enter questions in the bulk format.', 'error');
+            return;
+        }
+
+        const questions = this.parseBulkQuestions(bulkText);
+        console.log('Parsed questions:', questions); // Debug log
+        
+        if (questions.length === 0) {
+            this.showMessage('No valid questions found in the bulk format.', 'error');
+            return;
+        }
+
+        let successCount = 0;
+        let errorCount = 0;
+
+        for (const question of questions) {
+            try {
+                const formData = new FormData();
+                formData.append('text', question.text);
+                formData.append('correct_answer', question.correct_answer);
+                formData.append('points', question.points || '1');
+                formData.append('exam_id', this.currentExamId);
+                formData.append('options', JSON.stringify(question.options));
+
+                const response = await fetch('/api/create_question', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    successCount++;
+                } else {
+                    errorCount++;
+                }
+            } catch (error) {
+                errorCount++;
+            }
+        }
+
+        if (successCount > 0) {
+            this.showMessage(`✅ Successfully created ${successCount} questions${errorCount > 0 ? `, ${errorCount} failed` : ''}!`, 'success');
+            document.getElementById('bulk-questions-text').value = '';
+            this.loadExamQuestions(this.currentExamId);
+        } else {
+            this.showMessage(`❌ Failed to create any questions. ${errorCount} errors occurred.`, 'error');
+        }
+    }
+
+                    // Parse bulk questions from text format - ULTRA SIMPLIFIED VERSION
+                parseBulkQuestions(text) {
+                    const questions = [];
+                    const questionBlocks = text.split('---').filter(block => block.trim());
+
+                    for (const block of questionBlocks) {
+                        const lines = block.trim().split('\n').filter(line => line.trim());
+                        if (lines.length < 3) continue; // Need at least question + 2 options
+
+                        const question = {
+                            text: '',
+                            options: [],
+                            correct_answer: '',
+                            points: 1
+                        };
+
+                        // First line is the question
+                        question.text = lines[0].trim();
+
+                        // Next lines are options (2-4 options)
+                        for (let i = 1; i < lines.length && i <= 4; i++) {
+                            const line = lines[i].trim();
+                            if (line) {
+                                question.options.push(line);
+                            }
+                        }
+
+                        // If we have at least 2 options, add the question
+                        if (question.options.length >= 2) {
+                            // Set the first option as correct by default
+                            question.correct_answer = question.options[0];
+                            questions.push(question);
+                        }
+                    }
+
+                    console.log('Parsed questions:', questions);
+                    return questions;
+                }
 
     addOption() {
         const optionsContainer = document.getElementById('options-container');
@@ -314,8 +374,8 @@ class HostDashboard {
             <div class="question-actions">
                 <button class="btn btn-sm btn-secondary" onclick="hostDashboard.openEditQuestion(${question.id})"><i class="fas fa-edit"></i> Edit</button>
                 <button class="btn btn-sm btn-danger" onclick="hostDashboard.deleteQuestion(${question.id})"><i class="fas fa-trash"></i> Delete</button>
-                <button class="btn btn-sm btn-secondary" onclick="hostDashboard.moveQuestion(${question.id}, 'up')"><i class="fas fa-arrow-up"></i></button>
-                <button class="btn btn-sm btn-secondary" onclick="hostDashboard.moveQuestion(${question.id}, 'down')"><i class="fas fa-arrow-down"></i></button>
+                <button class="btn btn-sm btn-info" onclick="hostDashboard.moveQuestion(${question.id}, 'up')" title="Move Up"><i class="fas fa-arrow-up"></i></button>
+                <button class="btn btn-sm btn-info" onclick="hostDashboard.moveQuestion(${question.id}, 'down')" title="Move Down"><i class="fas fa-arrow-down"></i></button>
             </div>
         `;
         return div;
@@ -404,35 +464,71 @@ class HostDashboard {
     }
 
     moveQuestion = async (questionId, dir) => {
+        console.log(`Moving question ${questionId} ${dir}`); // Debug log
+        
         const examId = this.currentExamId || document.getElementById('selected-exam').value;
-        if (!examId) return;
+        if (!examId) {
+            console.error('No exam ID found');
+            this.showMessage('Please select an exam first', 'error');
+            return;
+        }
+        
+        if (!this.questionsCache || this.questionsCache.length === 0) {
+            console.error('No questions cache found');
+            return;
+        }
+        
         // local reorder for instant feedback
         const order = this.questionsCache.map(q => q.id);
         const idx = order.indexOf(questionId);
-        if (idx === -1) return;
-        const newOrder = order.slice();
-        if (dir === 'up' && idx > 0) {
-            [newOrder[idx-1], newOrder[idx]] = [newOrder[idx], newOrder[idx-1]];
-        } else if (dir === 'down' && idx < newOrder.length - 1) {
-            [newOrder[idx+1], newOrder[idx]] = [newOrder[idx], newOrder[idx+1]];
-        } else {
+        if (idx === -1) {
+            console.error(`Question ${questionId} not found in cache`);
             return;
         }
-        // apply locally
-        const idToQuestion = new Map(this.questionsCache.map(q => [q.id, q]));
-        this.questionsCache = newOrder.map((id, i) => ({ ...idToQuestion.get(id), order_index: i + 1 }));
-        this.renderQuestions(this.questionsCache);
-        // sync to server
-        try {
-            const r = await fetch(`/api/exam/${examId}/reorder`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ order: newOrder })
-            });
-            if (!r.ok) throw new Error('Reorder failed');
-        } catch (err) {
-            this.showMessage('Failed to persist order, reloading...', 'error');
-            this.loadExamQuestions(examId);
+        
+        const newOrder = order.slice();
+        let moved = false;
+        
+        if (dir === 'up' && idx > 0) {
+            [newOrder[idx-1], newOrder[idx]] = [newOrder[idx], newOrder[idx-1]];
+            moved = true;
+        } else if (dir === 'down' && idx < newOrder.length - 1) {
+            [newOrder[idx+1], newOrder[idx]] = [newOrder[idx], newOrder[idx+1]];
+            moved = true;
+        } else {
+            console.log(`Cannot move ${dir} - already at ${dir === 'up' ? 'top' : 'bottom'}`);
+            return;
+        }
+        
+        if (moved) {
+            // apply locally for instant feedback
+            const idToQuestion = new Map(this.questionsCache.map(q => [q.id, q]));
+            this.questionsCache = newOrder.map((id, i) => ({ ...idToQuestion.get(id), order_index: i + 1 }));
+            this.renderQuestions(this.questionsCache);
+            
+            // sync to server
+            try {
+                console.log('Sending reorder request to server...');
+                const r = await fetch(`/api/exam/${examId}/reorder`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ order: newOrder })
+                });
+                
+                if (!r.ok) {
+                    const errorText = await r.text();
+                    console.error('Reorder failed:', errorText);
+                    throw new Error(`Reorder failed: ${errorText}`);
+                }
+                
+                console.log('Reorder successful');
+                this.showMessage(`Question moved ${dir} successfully!`, 'success');
+            } catch (err) {
+                console.error('Reorder error:', err);
+                this.showMessage(`Failed to persist order: ${err.message}`, 'error');
+                // Reload to get correct state
+                this.loadExamQuestions(examId);
+            }
         }
     }
 

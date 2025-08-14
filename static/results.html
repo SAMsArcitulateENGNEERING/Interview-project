@@ -6,23 +6,114 @@
     <title>Interview Program - Results</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <style>
-        :root { --border:#e2e8f0; --text:#0f172a; --muted:#475569; --surface:#fff; --bg:#f6f7fb; --primary:#2563eb; --shadow:0 8px 30px rgba(2,6,23,0.06); }
-        body { background: var(--bg); }
-        .wrap { max-width: 960px; margin: 32px auto; padding: 0 16px; }
-        .card { background: var(--surface); border:1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); padding: 20px; margin-bottom: 16px; }
-        .header { display:flex; align-items:center; justify-content:space-between; margin-bottom: 12px; }
-        .header h1 { margin:0; font-size: 1.6rem; }
-        .btn-primary { background: var(--primary); color: #fff; border:none; border-radius: 10px; padding: 10px 14px; font-weight: 800; cursor:pointer; }
+        :root { 
+            --border:#e2e8f0; 
+            --text:#0f172a; 
+            --muted:#475569; 
+            --surface:#fff; 
+            --bg:#f6f7fb; 
+            --primary:#2563eb; 
+            --shadow:0 8px 30px rgba(2,6,23,0.06); 
+        }
+        body { 
+            background: var(--bg); 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+        .wrap { 
+            max-width: 1200px; 
+            margin: 32px auto; 
+            padding: 0 16px; 
+        }
+        .card { 
+            background: var(--surface); 
+            border:1px solid var(--border); 
+            border-radius: 14px; 
+            box-shadow: var(--shadow); 
+            padding: 20px; 
+            margin-bottom: 16px; 
+        }
+        .header { 
+            display:flex; 
+            align-items:center; 
+            justify-content:space-between; 
+            margin-bottom: 12px; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 14px;
+        }
+        .header h1 { 
+            margin:0; 
+            font-size: 1.8rem; 
+            font-weight: 600;
+        }
+        .btn-primary { 
+            background: rgba(255,255,255,0.2); 
+            color: #fff; 
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 10px; 
+            padding: 12px 20px; 
+            font-weight: 600; 
+            cursor:pointer; 
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn-primary:hover {
+            background: rgba(255,255,255,0.3);
+            transform: translateY(-2px);
+        }
+        .question-result {
+            transition: all 0.3s ease;
+        }
+        .question-result:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .correct {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .incorrect {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        .loading::after {
+            content: '';
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
     <div class="wrap">
         <div class="card header">
-            <h1>Exam Results</h1>
-            <button id="sorting-page" class="btn btn-primary">All Results</button>
+            <h1>📊 Exam Results</h1>
+            <a href="sorting.html" id="sorting-page" class="btn-primary">📋 View All Results</a>
         </div>
-        <div class="card" id="results-summary"></div>
-        <div class="card" id="answered-questions"></div>
+        <div class="card" id="results-summary">
+            <div class="loading">Loading results...</div>
+        </div>
+        <div class="card" id="answered-questions">
+            <!-- Question details will be loaded here -->
+        </div>
     </div>
     <script src="/static/js/results.js"></script>
 </body>

@@ -23,8 +23,68 @@ let violationCount = 0;
 
 // Initialize exam when page loads
 document.addEventListener('DOMContentLoaded', async () => {
-    await initializeExam();
+    // Check if we need to collect phone/email
+    const userPhone = localStorage.getItem('user_phone');
+    const userEmail = localStorage.getItem('user_email');
+    
+    if (!userPhone || !userEmail) {
+        showPhoneModal();
+    } else {
+        await initializeExam();
+    }
 });
+
+// Phone/Email Modal Functions
+function showPhoneModal() {
+    const modal = document.getElementById('phone-modal');
+    const phoneInput = document.getElementById('phone-number');
+    const emailInput = document.getElementById('email-confirm');
+    const submitBtn = document.getElementById('submit-contact');
+    
+    // Pre-fill email if available
+    const storedEmail = localStorage.getItem('user_email');
+    if (storedEmail) {
+        emailInput.value = storedEmail;
+    }
+    
+    modal.style.display = 'flex';
+    
+    // Handle form submission
+    submitBtn.onclick = async () => {
+        const phone = phoneInput.value.trim();
+        const email = emailInput.value.trim();
+        
+        if (!phone || !email) {
+            alert('Please provide both phone number and email.');
+            return;
+        }
+        
+        // Validate email format
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            alert('Please enter a valid email address.');
+            return;
+        }
+        
+        // Store contact info
+        localStorage.setItem('user_phone', phone);
+        localStorage.setItem('user_email', email);
+        
+        // Hide modal and initialize exam
+        modal.style.display = 'none';
+        await initializeExam();
+    };
+    
+    // Handle Enter key
+    const handleEnter = (e) => {
+        if (e.key === 'Enter') {
+            submitBtn.click();
+        }
+    };
+    
+    phoneInput.addEventListener('keypress', handleEnter);
+    emailInput.addEventListener('keypress', handleEnter);
+}
 
 async function initializeExam() {
     try {
