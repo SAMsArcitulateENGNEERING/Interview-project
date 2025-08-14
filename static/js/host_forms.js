@@ -56,6 +56,10 @@
   function buildQuestionDom(q, index) {
     const tmpl = el('#tmpl-question');
     const node = tmpl.content.firstElementChild.cloneNode(true);
+    
+    // Add animation delay for staggered entrance
+    node.style.animationDelay = `${index * 0.1}s`;
+    
     el('.q-index', node).textContent = '#' + (index + 1);
     const textInput = el('.q-text', node);
     textInput.value = q.text || '';
@@ -72,16 +76,23 @@
       if (!confirm('Are you sure you want to delete this question?')) return;
       
       try {
-        if (q.id) {
-          const r = await fetch(`/api/question/${q.id}`, { method: 'DELETE' });
-          if (!r.ok) { 
-            toast('Failed to delete question from database', 'error'); 
-            return; 
+        // Animate deletion
+        node.style.transform = 'translateY(-20px)';
+        node.style.opacity = '0';
+        node.style.transition = 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)';
+        
+        setTimeout(async () => {
+          if (q.id) {
+            const r = await fetch(`/api/question/${q.id}`, { method: 'DELETE' });
+            if (!r.ok) { 
+              toast('Failed to delete question from database', 'error'); 
+              return; 
+            }
           }
-        }
-        questions.splice(index, 1);
-        renderQuestions();
-        toast('Question deleted successfully');
+          questions.splice(index, 1);
+          renderQuestions();
+          toast('Question deleted successfully');
+        }, 300);
       } catch (error) {
         toast('Failed to delete question: ' + error.message, 'error');
       }
@@ -103,6 +114,10 @@
   function addOptionDom(container, { text, correct }) {
     const tmpl = el('#tmpl-option');
     const node = tmpl.content.firstElementChild.cloneNode(true);
+    
+    // Add animation for new options
+    node.style.animationDelay = `${container.children.length * 0.05}s`;
+    
     el('.opt-text', node).value = text || '';
     const radio = el('.opt-correct', node);
     radio.name = 'correct-' + Math.random().toString(36).slice(2);
@@ -336,8 +351,8 @@
       return;
     }
     
-    container.innerHTML = participants.map(p => `
-      <div class="participant-item">
+    container.innerHTML = participants.map((p, index) => `
+      <div class="participant-item" style="animation-delay: ${index * 0.1}s">
         <div class="participant-avatar">${p.name.charAt(0).toUpperCase()}</div>
         <div class="participant-info">
           <div class="participant-name">${p.name}</div>
@@ -363,8 +378,8 @@
       return;
     }
     
-    container.innerHTML = violations.map(v => `
-      <div class="violation-item">
+    container.innerHTML = violations.map((v, index) => `
+      <div class="violation-item" style="animation-delay: ${index * 0.1}s">
         <div class="violation-icon">
           <i class="fas fa-exclamation-triangle"></i>
         </div>
@@ -392,8 +407,8 @@
       return;
     }
     
-    container.innerHTML = activities.map(a => `
-      <div class="activity-item">
+    container.innerHTML = activities.map((a, index) => `
+      <div class="activity-item" style="animation-delay: ${index * 0.1}s">
         <div class="activity-icon">
           <i class="fas ${getActivityIcon(a.type)}"></i>
         </div>
@@ -434,9 +449,28 @@
       const response = await fetch(`/api/exam/${currentExamId}/stats`);
       const stats = await response.json();
       
-      el('#active-participants').textContent = stats.active_participants || 0;
-      el('#total-violations').textContent = stats.total_violations || 0;
-      el('#completion-rate').textContent = `${stats.completion_rate || 0}%`;
+      // Animate stat updates
+      const activeEl = el('#active-participants');
+      const violationsEl = el('#total-violations');
+      const completionEl = el('#completion-rate');
+      
+      if (activeEl.textContent !== String(stats.active_participants || 0)) {
+        activeEl.textContent = stats.active_participants || 0;
+        activeEl.classList.add('updated');
+        setTimeout(() => activeEl.classList.remove('updated'), 600);
+      }
+      
+      if (violationsEl.textContent !== String(stats.total_violations || 0)) {
+        violationsEl.textContent = stats.total_violations || 0;
+        violationsEl.classList.add('updated');
+        setTimeout(() => violationsEl.classList.remove('updated'), 600);
+      }
+      
+      if (completionEl.textContent !== `${stats.completion_rate || 0}%`) {
+        completionEl.textContent = `${stats.completion_rate || 0}%`;
+        completionEl.classList.add('updated');
+        setTimeout(() => completionEl.classList.remove('updated'), 600);
+      }
     } catch (error) {
       console.error('Error updating stats:', error);
     }

@@ -19,7 +19,9 @@
     </header>
 
     <main class="forms-main">
-      <section class="card">
+      <!-- Quiz Settings Section -->
+      <section class="card quiz-settings">
+        <h2><i class="fas fa-cog"></i> Quiz Settings</h2>
         <div class="row">
           <div class="col" style="max-width:760px">
             <label>Quiz title</label>
@@ -48,6 +50,7 @@
             <select id="existing-exams" class="select"></select>
           </div>
         </div>
+
         <div class="row actions-row">
           <button id="btn-new" class="btn"><i class="fas fa-plus"></i> New quiz</button>
           <button id="btn-activate-exam" class="btn btn-secondary" style="display:none;"><i class="fas fa-play"></i> Activate Quiz</button>
@@ -55,15 +58,31 @@
         </div>
       </section>
 
-      <section class="card">
-        <div class="qb-top">
-          <h2>Questions</h2>
-          <button id="btn-add-q" class="btn"><i class="fas fa-plus"></i> Add question</button>
-        </div>
-        <div id="questions-list" class="q-list"></div>
-      </section>
+      <!-- Main Content Area -->
+      <div class="main-content">
+        <!-- Question Builder Section -->
+        <section class="card question-builder">
+          <div class="qb-top">
+            <h2><i class="fas fa-edit"></i> Question Builder</h2>
+            <div class="qb-actions">
+              <button id="btn-add-q" class="btn btn-primary"><i class="fas fa-plus"></i> Add Question</button>
+            </div>
+          </div>
+          
+          <div id="questions-list" class="q-list">
+            <div class="empty-state">
+              <i class="fas fa-question-circle"></i>
+              <h3>No Questions Yet</h3>
+              <p>Start building your quiz by adding questions manually.</p>
+              <button class="btn btn-primary" onclick="document.getElementById('btn-add-q').click()">
+                <i class="fas fa-plus"></i> Add Your First Question
+              </button>
+            </div>
+          </div>
+        </section>
 
-      <section class="card activity-section">
+        <!-- Activity Section -->
+        <section class="card activity-section">
         <div class="activity-header">
           <h2><i class="fas fa-chart-line"></i> Live Activity</h2>
           <div class="activity-stats">
@@ -123,6 +142,7 @@
           </div>
         </div>
       </section>
+      </div>
     </main>
   </div>
 
